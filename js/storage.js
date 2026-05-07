@@ -8,7 +8,6 @@ const DEFAULTS = {
     formWidth: 550,
     layout: "left",
     safeZoneWidth: 350,
-    autoResizeOnLoad: true,
     safeZoneColor: DEFAULT_SAFE_ZONE_COLOR,
   },
   images: {},

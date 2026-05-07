@@ -3,15 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ENgrid Background Image Previewer</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <title>Background Image Helper</title>
+  <link rel="icon" href="assets/favicon-32x32.png" sizes="32x32" />
+  <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
+  <link rel="stylesheet" href="css/styles.css?v=4" />
 </head>
 <body>
   <main class="layout">
     <section class="image-input" aria-label="Image controls">
-      <h1 class="app-title">ENgrid Background Image Previewer</h1>
+      <h1 class="app-title">Background Image Helper</h1>
       <fieldset class="form-safezone-fieldset">
-        <legend>Form &amp; safe zone</legend>
+        <legend>Preview</legend>
         <label>
           <span>Form position</span>
           <select id="form-layout">
@@ -46,17 +50,26 @@
             <option value="1,1">Right Bottom</option>
           </select>
         </label>
+        <p class="focal-attribute-hint" id="focal-attribute-hint" hidden></p>
       </fieldset>
 
       <div class="error" id="error" hidden></div>
 
       <fieldset>
-        <legend>Output dimensions</legend>
+        <legend>Output</legend>
         <p class="source-info" id="source-info" hidden>
-          Source: <span id="meta-dims"></span> · <span id="meta-size"></span> ·
-          <button type="button" class="link-btn" id="use-intrinsic">Use intrinsic size</button>
+          <span class="source-info-line source-info-line-source"><span class="source-info-label">Source:</span> <span class="source-info-value"><span id="meta-dims"></span> · <span id="meta-size"></span></span></span>
+          <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span> <button type="button" class="link-btn" id="use-intrinsic">Use maximum size</button> <button type="button" class="link-btn" id="resize-to-2000" hidden>Resize to 2000px</button></span></span>
         </p>
-        <div class="row-2">
+        <label class="quality-control">
+          <span>Quality</span>
+          <span class="quality-range-wrap">
+            <input type="range" id="quality" min="1" max="100" value="75" />
+            <output id="quality-out" class="quality-bubble">75</output>
+          </span>
+        </label>
+        <p class="compression-warning" id="compression-warning" hidden></p>
+        <div class="row-2" hidden>
           <label>
             <span id="output-w-label">Width (px)</span>
             <input type="number" id="output-w" min="100" max="6000" value="1800" />
@@ -66,27 +79,13 @@
             <input type="number" id="output-h" min="100" max="6000" value="1200" />
           </label>
         </div>
-        <div class="size-warning" id="size-warning" hidden>
-          <span id="size-warning-text"></span>
-          <button type="button" id="resize-to-2000">Resize to 2000px</button>
-        </div>
-        <label class="checkbox-label">
-          <input type="checkbox" id="auto-resize" checked />
-          <span>Auto-resize new images to 2000px</span>
-        </label>
-        <button type="button" id="crop-open" disabled>Crop image…</button>
-      </fieldset>
 
-      <fieldset>
-        <legend>Compression</legend>
-        <label>
-          <span>Quality <output id="quality-out">75</output></span>
-          <input type="range" id="quality" min="1" max="100" value="75" />
-        </label>
-        <p class="compression-warning" id="compression-warning" hidden></p>
-        <p class="size-estimate" id="size-estimate"></p>
-        <button type="button" id="compare-btn" hidden>Hold to compare original</button>
+        <div class="button-row">
+          <button type="button" id="crop-open" disabled>Crop</button>
+          <button type="button" id="compare-btn" hidden>Compare</button>
+        </div>
         <button type="button" id="download" class="primary" disabled>Download optimized JPEG</button>
+        <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image">Clear image</button></p>
       </fieldset>
     </section>
 
@@ -99,7 +98,7 @@
         <div class="empty-state" id="empty-state">
           <div class="empty-state-content">
             <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" />
-            <h1 class="app-title">ENgrid Background Image Previewer</h1>
+            <h1 class="app-title">Background Image Helper</h1>
             <strong>Drop an image here</strong>
             <span class="muted">or</span>
             <button type="button" id="upload-btn" class="empty-btn">Choose a file</button>
@@ -109,7 +108,7 @@
         </div>
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden />
         <div class="canvas-btn-group canvas-btn-group-tr">
-          <button type="button" class="canvas-btn clear-btn" id="clear-image" hidden title="Clear image">Clear image</button>
+          <button type="button" class="canvas-btn clear-btn" id="canvas-clear" hidden title="Clear image">Clear image</button>
         </div>
         <div class="canvas-btn-group canvas-btn-group-br">
           <button type="button" class="canvas-btn info-btn" id="info-btn" hidden title="What does this preview show?" aria-label="Show preview legend">i</button>
@@ -187,11 +186,11 @@
         <button type="button" id="reset-crop" hidden>Remove crop</button>
         <span class="modal-actions-spacer"></span>
         <button type="button" data-close>Cancel</button>
-        <button type="button" id="crop-save" class="primary">Save crop</button>
+        <button type="button" id="crop-save" class="primary">Save</button>
       </footer>
     </div>
   </div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>
