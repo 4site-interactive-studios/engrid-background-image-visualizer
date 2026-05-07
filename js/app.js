@@ -7,7 +7,7 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js";
-import { fitCanvasToContainer, render } from "./overlay.js";
+import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js";
 import { encodeJpeg, triggerDownload, suggestFilename } from "./compress.js";
 
 const $ = (id) => document.getElementById(id);
@@ -49,6 +49,9 @@ const els = {
   emptyState: $("empty-state"),
   sourceInfo: $("source-info"),
   focalPreset: $("focal-preset"),
+  cropFocalPreset: $("crop-focal-preset"),
+  outputWLabel: $("output-w-label"),
+  outputHLabel: $("output-h-label"),
   outputW: $("output-w"),
   outputH: $("output-h"),
   resetCrop: $("reset-crop"),
@@ -112,7 +115,7 @@ function syncSettingsToInputs() {
   els.formWidth.value = state.settings.formWidth;
   els.formLayout.value = state.settings.layout;
   els.safeZoneWidth.value = state.settings.safeZoneWidth;
-  els.safeZoneColor.value = state.settings.safeZoneColor || "#3fb950";
+  els.safeZoneColor.value = state.settings.safeZoneColor || "#00FF00";
   els.autoResize.checked = state.settings.autoResizeOnLoad !== false;
 }
 
@@ -123,10 +126,30 @@ function applyLayoutFromSettings() {
 }
 
 function syncOutputAndQualityToInputs() {
+  updateOutputDimensionLabels();
   els.outputW.value = state.outputW;
   els.outputH.value = state.outputH;
   els.quality.value = state.quality;
   els.qualityOut.value = state.quality;
+}
+
+function updateOutputDimensionLabels() {
+  if (!state.image) {
+    els.outputWLabel.textContent = "Width (px)";
+    els.outputHLabel.textContent = "Height (px)";
+    return;
+  }
+
+  const intrinsicW = state.hasManualCrop && state.crop
+    ? Math.round(state.crop.w)
+    : state.image.width;
+  const intrinsicH = state.hasManualCrop && state.crop
+    ? Math.round(state.crop.h)
+    : state.image.height;
+  const isResized = state.outputW !== intrinsicW || state.outputH !== intrinsicH;
+
+  els.outputWLabel.textContent = isResized ? "Resized Width" : "Intrinsic Width";
+  els.outputHLabel.textContent = isResized ? "Resized Height" : "Intrinsic Height";
 }
 
 function rerender() {
@@ -164,24 +187,25 @@ function recomputeCropFromFocal() {
 }
 
 function updateSizeWarning() {
+  els.sizeWarning.hidden = true;
+  els.sizeWarning.classList.remove("active");
+  els.sizeWarningText.textContent = "";
+  els.resizeTo2000.hidden = true;
+
   if (!state.image) {
-    els.sizeWarning.hidden = true;
     return;
   }
   const max = Math.max(state.outputW, state.outputH);
-  const imageMaxDim = Math.max(state.image.width, state.image.height);
-  const canResize = imageMaxDim > 2000;
 
   if (max < 1500) {
     els.sizeWarning.hidden = false;
+    els.sizeWarning.classList.add("active");
     els.sizeWarningText.textContent = `Output is small (${state.outputW}×${state.outputH}). Recommended longest side: 1500–2000px.`;
-    els.resizeTo2000.hidden = !canResize;
-  } else if (max > 2400) {
+  } else if (max > 2000) {
     els.sizeWarning.hidden = false;
+    els.sizeWarning.classList.add("active");
     els.sizeWarningText.textContent = `Output is large (${state.outputW}×${state.outputH}). Recommended longest side: 1500–2000px.`;
-    els.resizeTo2000.hidden = !canResize;
-  } else {
-    els.sizeWarning.hidden = true;
+    els.resizeTo2000.hidden = false;
   }
 }
 
@@ -204,6 +228,7 @@ function resizeOutputToMax2000() {
 
 function updateRemoveCropVisibility() {
   els.resetCrop.hidden = !state.hasManualCrop;
+  els.cropOpen.textContent = state.hasManualCrop ? "Edit crop..." : "Crop image...";
 }
 
 function snapFocalToPreset(focal) {
@@ -212,7 +237,15 @@ function snapFocalToPreset(focal) {
 }
 
 function highlightFocalPreset() {
-  els.focalPreset.value = `${state.focal.x},${state.focal.y}`;
+  const value = `${state.focal.x},${state.focal.y}`;
+  els.focalPreset.value = value;
+  els.cropFocalPreset.value = value;
+}
+
+function setFocalFromPreset(value) {
+  const [x, y] = value.split(",").map(parseFloat);
+  state.focal = { x, y };
+  highlightFocalPreset();
 }
 
 async function applyImage(image) {
@@ -282,10 +315,10 @@ function handleClearImage() {
   els.compareBtn.hidden = true;
   state.hasManualCrop = false;
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
-  state.compressedBitmap = null;
-  state.compareMode = false;
-  els.resetCrop.hidden = true;
-  els.imageUrl.value = "";
+    state.compressedBitmap = null;
+    state.compareMode = false;
+    updateRemoveCropVisibility();
+    els.imageUrl.value = "";
   els.sizeEstimate.textContent = "";
   els.layout.classList.remove("has-image");
   els.sizeWarning.hidden = true;
@@ -341,8 +374,8 @@ function wireSettingsInputs() {
     rerender();
   });
   els.resetSafeZoneColor.addEventListener("click", () => {
-    state.settings.safeZoneColor = "#3fb950";
-    els.safeZoneColor.value = "#3fb950";
+    state.settings.safeZoneColor = "#00FF00";
+    els.safeZoneColor.value = "#00FF00";
     persistSettings();
     rerender();
   });
@@ -453,10 +486,17 @@ function wireImageInput() {
 function wireFocalAndCrop() {
   els.focalPreset.addEventListener("change", () => {
     if (!state.image) return;
-    const value = els.focalPreset.value;
-    const [x, y] = value.split(",").map(parseFloat);
-    state.focal = { x, y };
-    recomputeCropFromFocal();
+    setFocalFromPreset(els.focalPreset.value);
+    if (!state.hasManualCrop) recomputeCropFromFocal();
+    rerender();
+    persistImageState();
+    scheduleEstimate();
+  });
+
+  els.cropFocalPreset.addEventListener("change", () => {
+    if (!state.image) return;
+    setFocalFromPreset(els.cropFocalPreset.value);
+    renderModal();
     rerender();
     persistImageState();
     scheduleEstimate();
@@ -466,6 +506,7 @@ function wireFocalAndCrop() {
     state.outputW = clampInt(els.outputW.value, 100, 6000, state.outputW);
     state.outputH = Math.max(1, Math.round(state.outputW / state.outputAspect));
     els.outputH.value = state.outputH;
+    updateOutputDimensionLabels();
     if (state.image) recomputeCropFromFocal();
     rerender();
     persistImageState();
@@ -476,6 +517,7 @@ function wireFocalAndCrop() {
     state.outputH = clampInt(els.outputH.value, 100, 6000, state.outputH);
     state.outputW = Math.max(1, Math.round(state.outputH * state.outputAspect));
     els.outputW.value = state.outputW;
+    updateOutputDimensionLabels();
     if (state.image) recomputeCropFromFocal();
     rerender();
     persistImageState();
@@ -514,6 +556,10 @@ function wireFocalAndCrop() {
     );
     updateRemoveCropVisibility();
     updateSizeWarning();
+    if (modalState.active) {
+      modalState.crop = { ...state.crop };
+      renderModal();
+    }
     rerender();
     persistImageState();
     scheduleEstimate();
@@ -547,10 +593,6 @@ function applyDrag(drag, dx, dy, aspect) {
   }
 
   return { x, y, w, h };
-}
-
-function clamp01(n) {
-  return Math.max(0, Math.min(1, n));
 }
 
 function wireCompression() {
@@ -720,6 +762,8 @@ function renderModal() {
     ctx.fillRect(cx + cw, cy, canvas.width - (cx + cw), ch);
     ctx.restore();
 
+    drawModalCropSafeZone(ctx, { x: cx, y: cy, w: cw, h: ch }, s);
+
     ctx.save();
     ctx.strokeStyle = "rgba(47, 129, 247, 0.95)";
     ctx.lineWidth = 2;
@@ -735,6 +779,34 @@ function renderModal() {
   els.cropSizeReadout.textContent = c
     ? `Crop: ${Math.round(c.w)} × ${Math.round(c.h)} px`
     : "";
+}
+
+function drawModalCropSafeZone(ctx, rect, scale) {
+  const outputW = cropModalOutputWidth(rect.w / scale, rect.h / scale);
+  const safeZoneWidth = outputW > 0
+    ? state.settings.safeZoneWidth * (rect.w / outputW)
+    : 0;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rect.x, rect.y, rect.w, rect.h);
+  ctx.clip();
+  ctx.translate(rect.x, rect.y);
+  drawActiveSafeZone(
+    ctx,
+    { width: rect.w, height: rect.h },
+    safeZoneWidth,
+    state.focal.x,
+    state.settings.safeZoneColor || "#00FF00"
+  );
+  ctx.restore();
+}
+
+function cropModalOutputWidth(cropW, cropH) {
+  if (!state.settings.autoResizeOnLoad) return cropW;
+  const max = Math.max(cropW, cropH);
+  if (max <= 2000) return cropW;
+  return Math.max(1, Math.round(cropW * (2000 / max)));
 }
 
 function modalHandlePositions(x, y, w, h) {
@@ -857,11 +929,13 @@ function wireCropModal() {
       state.outputW = state.crop.w;
       state.outputH = state.crop.h;
       state.outputAspect = state.outputW / state.outputH;
+      if (state.settings.autoResizeOnLoad && Math.max(state.outputW, state.outputH) > 2000) {
+        const ratio = 2000 / Math.max(state.outputW, state.outputH);
+        state.outputW = Math.max(1, Math.round(state.outputW * ratio));
+        state.outputH = Math.max(1, Math.round(state.outputH * ratio));
+        state.outputAspect = state.outputW / state.outputH;
+      }
       state.hasManualCrop = true;
-      state.focal = snapFocalToPreset({
-        x: clamp01((state.crop.x + state.crop.w / 2) / state.image.width),
-        y: clamp01((state.crop.y + state.crop.h / 2) / state.image.height),
-      });
       syncOutputAndQualityToInputs();
       highlightFocalPreset();
       updateRemoveCropVisibility();

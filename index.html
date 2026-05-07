@@ -28,22 +28,22 @@
           <span>Image safe zone (px)</span>
           <span class="safe-zone-controls">
             <input type="number" id="safe-zone-width" min="50" max="1000" value="350" />
-            <input type="color" id="safe-zone-color" value="#3fb950" title="Safe zone color" />
+            <input type="color" id="safe-zone-color" value="#00FF00" title="Safe zone color" />
             <button type="button" class="link-btn" id="reset-safe-zone-color" title="Reset safe zone color">Reset</button>
           </span>
         </label>
         <label>
           <span>Image focal point</span>
           <select id="focal-preset">
-            <option value="0,1">Bottom Left</option>
-            <option value="1,1">Bottom Right</option>
+            <option value="0,0">Left Top</option>
+            <option value="0,0.5">Left Center</option>
+            <option value="0,1">Left Bottom</option>
+            <option value="0.5,0">Center Top</option>
             <option value="0.5,0.5" selected>Center</option>
             <option value="0.5,1">Center Bottom</option>
-            <option value="0,0.5">Center Left</option>
-            <option value="1,0.5">Center Right</option>
-            <option value="0.5,0">Center Top</option>
-            <option value="0,0">Top Left</option>
-            <option value="1,0">Top Right</option>
+            <option value="1,0">Right Top</option>
+            <option value="1,0.5">Right Center</option>
+            <option value="1,1">Right Bottom</option>
           </select>
         </label>
       </fieldset>
@@ -58,11 +58,11 @@
         </p>
         <div class="row-2">
           <label>
-            <span>Width (px)</span>
+            <span id="output-w-label">Width (px)</span>
             <input type="number" id="output-w" min="100" max="6000" value="1800" />
           </label>
           <label>
-            <span>Height (px)</span>
+            <span id="output-h-label">Height (px)</span>
             <input type="number" id="output-h" min="100" max="6000" value="1200" />
           </label>
         </div>
@@ -74,7 +74,6 @@
           <input type="checkbox" id="auto-resize" checked />
           <span>Auto-resize new images to 2000px</span>
         </label>
-        <button type="button" id="reset-crop" hidden>Remove crop</button>
         <button type="button" id="crop-open" disabled>Crop image…</button>
       </fieldset>
 
@@ -154,11 +153,26 @@
         <button type="button" class="icon-btn" data-close aria-label="Close">×</button>
       </header>
       <p class="hint">Drag the rectangle to select the crop. Resize from the corner/edge handles. Output dimensions update to match the selection.</p>
+      <label class="crop-modal-control">
+        <span>Image focal point</span>
+        <select id="crop-focal-preset">
+          <option value="0,0">Left Top</option>
+          <option value="0,0.5">Left Center</option>
+          <option value="0,1">Left Bottom</option>
+          <option value="0.5,0">Center Top</option>
+          <option value="0.5,0.5" selected>Center</option>
+          <option value="0.5,1">Center Bottom</option>
+          <option value="1,0">Right Top</option>
+          <option value="1,0.5">Right Center</option>
+          <option value="1,1">Right Bottom</option>
+        </select>
+      </label>
       <div class="modal-canvas-wrap">
         <canvas id="modal-canvas"></canvas>
       </div>
       <footer class="modal-actions">
         <span id="crop-size-readout" class="crop-size-readout"></span>
+        <button type="button" id="reset-crop" hidden>Remove crop</button>
         <span class="modal-actions-spacer"></span>
         <button type="button" data-close>Cancel</button>
         <button type="button" id="crop-save" class="primary">Save crop</button>

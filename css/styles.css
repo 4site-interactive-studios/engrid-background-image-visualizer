@@ -257,9 +257,9 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 }
 
 .size-warning {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
   margin: 8px 0 6px;
@@ -269,10 +269,17 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   font-size: 11px;
   color: var(--warn);
 }
+.size-warning.active {
+  display: flex;
+}
+.size-warning button[hidden] {
+  display: none;
+}
 .size-warning button {
   flex-shrink: 0;
   font-size: 11px;
   padding: 4px 8px;
+  width: 100%;
 }
 
 .checkbox-label {
@@ -349,6 +356,11 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .image-input fieldset button {
   width: 100%;
   margin-top: 6px;
+}
+.image-input fieldset .source-info button {
+  width: auto;
+  margin-top: 0;
+  display: inline;
 }
 
 .canvas-wrap {
@@ -464,6 +476,18 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.crop-modal-control {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 260px);
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.crop-modal-control > span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .size-estimate {

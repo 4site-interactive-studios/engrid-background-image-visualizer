@@ -64,11 +64,11 @@ export function render({ canvas, image, settings, focal, crop }) {
     canvas,
     settings.safeZoneWidth,
     focal ? focal.x : 0.5,
-    settings.safeZoneColor || "#3fb950"
+    settings.safeZoneColor || "#00FF00"
   );
 }
 
-function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color) {
+export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color) {
   const colW = Math.round(Math.min(columnWidthPx, canvas.width));
   if (colW <= 0) return;
 

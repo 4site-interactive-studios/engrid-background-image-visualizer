@@ -1,7 +1,7 @@
 const KEY = "engrid-bg-viz";
 const MAX_IMAGES = 50;
 
-const DEFAULT_SAFE_ZONE_COLOR = "#3fb950";
+const DEFAULT_SAFE_ZONE_COLOR = "#00FF00";
 
 const DEFAULTS = {
   settings: {
