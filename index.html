@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ENgrid Background Image Visualizer</title>
+  <title>ENgrid Background Image Previewer</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <main class="layout">
     <section class="image-input" aria-label="Image controls">
-      <h1 class="app-title">ENgrid BG Image Previewer</h1>
+      <h1 class="app-title">ENgrid Background Image Previewer</h1>
       <fieldset class="form-safezone-fieldset">
         <legend>Form &amp; safe zone</legend>
         <label>
@@ -24,7 +24,7 @@
           <span>Form width (px)</span>
           <input type="number" id="form-width" min="100" max="2000" value="550" />
         </label>
-        <label>
+        <label class="safe-zone-setting">
           <span>Image safe zone (px)</span>
           <span class="safe-zone-controls">
             <input type="number" id="safe-zone-width" min="50" max="1000" value="350" />
@@ -32,7 +32,7 @@
             <button type="button" class="link-btn" id="reset-safe-zone-color" title="Reset safe zone color">Reset</button>
           </span>
         </label>
-        <label>
+        <label class="focal-point-setting">
           <span>Image focal point</span>
           <select id="focal-preset">
             <option value="0,0">Left Top</option>
@@ -80,9 +80,10 @@
       <fieldset>
         <legend>Compression</legend>
         <label>
-          <span>Quality <output id="quality-out">80</output></span>
-          <input type="range" id="quality" min="1" max="100" value="80" />
+          <span>Quality <output id="quality-out">75</output></span>
+          <input type="range" id="quality" min="1" max="100" value="75" />
         </label>
+        <p class="compression-warning" id="compression-warning" hidden></p>
         <p class="size-estimate" id="size-estimate"></p>
         <button type="button" id="compare-btn" hidden>Hold to compare original</button>
         <button type="button" id="download" class="primary" disabled>Download optimized JPEG</button>
@@ -92,10 +93,13 @@
     <section class="preview" aria-label="Preview">
       <div class="canvas-wrap" id="canvas-wrap">
         <canvas id="preview-canvas"></canvas>
+        <div class="preview-spinner" id="preview-spinner" hidden aria-hidden="true">
+          <span class="spinner" aria-label="Updating preview"></span>
+        </div>
         <div class="empty-state" id="empty-state">
           <div class="empty-state-content">
             <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" />
-            <h1 class="app-title">ENgrid BG Image Previewer</h1>
+            <h1 class="app-title">ENgrid Background Image Previewer</h1>
             <strong>Drop an image here</strong>
             <span class="muted">or</span>
             <button type="button" id="upload-btn" class="empty-btn">Choose a file</button>
@@ -130,6 +134,13 @@
                 </div>
               </li>
               <li>
+                <span class="legend-swatch swatch-warm"></span>
+                <div>
+                  <strong>Image warm zone</strong>
+                  <p>Five 30px bands on either side of the safe zone, stepping down by 20% opacity per band. It is clipped at the image edge for left and right focal points.</p>
+                </div>
+              </li>
+              <li>
                 <strong>Form area</strong>
                 <p>The sidebar itself. Its width equals <em>Form width</em>, anchored per <em>Form position</em>. Anything behind the sidebar would be hidden by the form on the real page.</p>
               </li>
@@ -153,7 +164,7 @@
         <button type="button" class="icon-btn" data-close aria-label="Close">×</button>
       </header>
       <p class="hint">Drag the rectangle to select the crop. Resize from the corner/edge handles. Output dimensions update to match the selection.</p>
-      <label class="crop-modal-control">
+      <label class="crop-modal-control crop-focal-setting">
         <span>Image focal point</span>
         <select id="crop-focal-preset">
           <option value="0,0">Left Top</option>
@@ -170,6 +181,7 @@
       <div class="modal-canvas-wrap">
         <canvas id="modal-canvas"></canvas>
       </div>
+      <p id="crop-size-warning" class="crop-size-warning" hidden></p>
       <footer class="modal-actions">
         <span id="crop-size-readout" class="crop-size-readout"></span>
         <button type="button" id="reset-crop" hidden>Remove crop</button>

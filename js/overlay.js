@@ -30,7 +30,7 @@ export function fitCanvasToContainer(canvas, container) {
   canvas.height = Math.round(h);
 }
 
-export function render({ canvas, image, settings, focal, crop }) {
+export function render({ canvas, image, settings, focal, crop, showSafeZone = true }) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -59,16 +59,25 @@ export function render({ canvas, image, settings, focal, crop }) {
     0, 0, canvas.width, canvas.height
   );
 
-  drawActiveSafeZone(
-    ctx,
-    canvas,
-    settings.safeZoneWidth,
-    focal ? focal.x : 0.5,
-    settings.safeZoneColor || "#00FF00"
-  );
+  if (showSafeZone) {
+    drawActiveSafeZone(
+      ctx,
+      canvas,
+      settings.safeZoneWidth,
+      focal ? focal.x : 0.5,
+      settings.safeZoneColor || "#00FF00",
+      undefined,
+      settings.safeZoneFillAlpha,
+      settings.safeZoneWarmColor
+    );
+  }
 }
 
-export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color) {
+const SAFE_ZONE_FILL_ALPHA = 0.3;
+const WARM_ZONE_BAND_WIDTH = 30;
+const WARM_ZONE_OPACITY_FACTORS = [1, 0.8, 0.6, 0.4, 0.2];
+
+export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color, warmZoneBandWidthPx = WARM_ZONE_BAND_WIDTH, safeZoneFillAlpha = SAFE_ZONE_FILL_ALPHA, warmZoneColor = color) {
   const colW = Math.round(Math.min(columnWidthPx, canvas.width));
   if (colW <= 0) return;
 
@@ -78,7 +87,9 @@ export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color) {
   else x = Math.round((canvas.width - colW) / 2);
 
   ctx.save();
-  ctx.fillStyle = rgba(color, 0.18);
+  drawWarmZoneBands(ctx, canvas, x, colW, warmZoneColor || color, warmZoneBandWidthPx, safeZoneFillAlpha);
+
+  ctx.fillStyle = rgba(color, safeZoneFillAlpha);
   ctx.fillRect(x, 0, colW, canvas.height);
 
   ctx.strokeStyle = rgba(color, 0.85);
@@ -91,6 +102,30 @@ export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color) {
   ctx.lineTo(x + colW - 0.5, canvas.height);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawWarmZoneBands(ctx, canvas, safeX, safeW, color, bandWidthPx, safeZoneFillAlpha) {
+  const bandW = Math.max(0, Math.round(bandWidthPx));
+  if (bandW <= 0) return;
+
+  for (let i = 0; i < WARM_ZONE_OPACITY_FACTORS.length; i++) {
+    const alpha = safeZoneFillAlpha * WARM_ZONE_OPACITY_FACTORS[i];
+    const offset = i * bandW;
+
+    const leftX = Math.max(0, safeX - offset - bandW);
+    const leftW = safeX - offset - leftX;
+    if (leftW > 0) {
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.fillRect(leftX, 0, leftW, canvas.height);
+    }
+
+    const rightX = safeX + safeW + offset;
+    const rightW = Math.min(bandW, canvas.width - rightX);
+    if (rightW > 0) {
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.fillRect(rightX, 0, rightW, canvas.height);
+    }
+  }
 }
 
 function formRectAt(widthPx, layout, canvasWidth, scale) {
