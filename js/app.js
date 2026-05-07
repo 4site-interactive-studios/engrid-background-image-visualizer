@@ -748,9 +748,15 @@ function wireCompression() {
     els.compareBtn.classList.toggle("active", state.compareMode);
     els.compareBtn.textContent = state.compareMode ? "Original" : "Compare";
   };
+  const updateCompareOverlayControls = () => {
+    const hide = state.compareMode || state.compareHoverOverlay;
+    els.canvasClear.hidden = hide || !state.image;
+    els.infoBtn.hidden = hide || !state.image;
+  };
   const setCompareHoverOverlay = (active) => {
     if (state.compareHoverOverlay === active) return;
     state.compareHoverOverlay = active;
+    updateCompareOverlayControls();
     rerender();
   };
   const startCompareHover = () => {
@@ -766,12 +772,14 @@ function wireCompression() {
     if (state.compareMode) return;
     state.compareMode = true;
     updateCompareButton();
+    updateCompareOverlayControls();
     rerender();
   };
   const endComparePress = () => {
     if (!state.compareMode) return;
     state.compareMode = false;
     updateCompareButton();
+    updateCompareOverlayControls();
     rerender();
   };
   els.compareBtn.addEventListener("pointerenter", startCompareHover);
