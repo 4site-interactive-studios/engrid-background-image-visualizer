@@ -91,6 +91,7 @@ const modalState = {
   crop: null,
   drag: null,
   removeCrop: false,
+  focal: null,
 };
 
 function clampInt(v, min, max, fallback) {
@@ -229,6 +230,25 @@ function updateQualityDisplay() {
   els.qualityOut.style.setProperty("--quality-pos", `${pct}%`);
 }
 
+function syncCompareUi() {
+  els.compareBtn.classList.toggle("active", state.compareMode);
+  els.compareBtn.textContent = state.compareMode ? "Original" : "Compare";
+
+  const hide = state.compareMode || state.compareHoverOverlay;
+  els.canvasClear.hidden = hide || !state.image;
+  els.infoBtn.hidden = hide || !state.image;
+
+  if (state.compareMode && state.image) {
+    els.compareOverlayLabel.hidden = false;
+    els.compareOverlayLabel.textContent = "Original";
+  } else if (state.compareHoverOverlay && state.image) {
+    els.compareOverlayLabel.hidden = false;
+    els.compareOverlayLabel.textContent = "Compressed";
+  } else {
+    els.compareOverlayLabel.hidden = true;
+  }
+}
+
 function updateCompressionWarning() {
   if (state.quality < 40) {
     els.compressionWarning.hidden = false;
@@ -364,7 +384,7 @@ function resizeOutputToMax2000() {
 
 function updateRemoveCropVisibility() {
   els.resetCrop.hidden = !state.hasManualCrop;
-  els.cropOpen.textContent = state.hasManualCrop ? "Edit crop..." : "Crop image...";
+  els.cropOpen.textContent = state.hasManualCrop ? "Edit crop..." : "Crop";
 }
 
 function snapFocalToPreset(focal) {
@@ -397,9 +417,9 @@ async function applyImage(image) {
     state.outputH = saved.outputH || image.height;
     state.quality = saved.quality ?? 75;
     state.hasManualCrop = !!saved.hasManualCrop;
-    state.crop = saved.cropFrame
+    state.crop = saved.hasManualCrop && saved.cropFrame
       ? clampCrop(saved.cropFrame, image)
-      : computeCropFromFocalPoint(image, state.focal, state.outputW, state.outputH);
+      : computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   } else {
     state.hasManualCrop = false;
     state.focal = { x: 0.5, y: 0.5 };
@@ -412,7 +432,7 @@ async function applyImage(image) {
       state.outputH = image.height;
     }
     state.quality = 75;
-    state.crop = computeCropFromFocalPoint(image, state.focal, state.outputW, state.outputH);
+    state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
 
   state.outputAspect = state.outputW / state.outputH;
@@ -458,7 +478,7 @@ function handleClearImage() {
   state.compareHoverOverlay = false;
   updateRemoveCropVisibility();
   updateFocalAttributeHint();
-  els.compareOverlayLabel.hidden = true;
+  syncCompareUi();
   els.imageUrl.value = "";
   els.layout.classList.remove("has-image");
   lastTriedUrl = null;
@@ -470,10 +490,13 @@ function handleClearImage() {
 
 async function handleFile(file) {
   clearError();
+  const gen = ++loadGeneration;
   try {
     const image = await loadFromFile(file);
+    if (gen !== loadGeneration) return;
     await applyImage(image);
   } catch (err) {
+    if (gen !== loadGeneration) return;
     showError(err.message || String(err));
   }
 }
@@ -481,10 +504,13 @@ async function handleFile(file) {
 async function handleUrl(url) {
   clearError();
   if (!url) return;
+  const gen = ++loadGeneration;
   try {
     const image = await loadFromUrl(url);
+    if (gen !== loadGeneration) return;
     await applyImage(image);
   } catch (err) {
+    if (gen !== loadGeneration) return;
     showError(err.message || String(err));
   }
 }
@@ -547,6 +573,7 @@ function wireInfoModal() {
 
 let urlInputTimer = null;
 let lastTriedUrl = null;
+let loadGeneration = 0;
 function attemptUrlLoad(url) {
   if (!url || url === lastTriedUrl) return;
   lastTriedUrl = url;
@@ -580,6 +607,7 @@ function wireImageInput() {
   });
 
   els.clearImage.addEventListener("click", handleClearImage);
+  els.canvasClear.addEventListener("click", handleClearImage);
 
   els.imageUrl.addEventListener("input", () => {
     clearTimeout(urlInputTimer);
@@ -635,13 +663,10 @@ function wireFocalAndCrop() {
   });
 
   els.cropFocalPreset.addEventListener("change", () => {
-    if (!state.image) return;
-    setFocalFromPreset(els.cropFocalPreset.value);
+    if (!state.image || !modalState.active) return;
+    const [x, y] = els.cropFocalPreset.value.split(",").map(parseFloat);
+    modalState.focal = { x, y };
     renderModal();
-    rerender();
-    persistImageState();
-    scheduleEstimate();
-    updateFocalAttributeHint();
   });
 
   els.outputW.addEventListener("input", () => {
@@ -747,28 +772,10 @@ function wireCompression() {
     persistImageState();
   });
 
-  const updateCompareButton = () => {
-    els.compareBtn.classList.toggle("active", state.compareMode);
-    els.compareBtn.textContent = state.compareMode ? "Original" : "Compare";
-  };
-  const updateCompareOverlayControls = () => {
-    const hide = state.compareMode || state.compareHoverOverlay;
-    els.canvasClear.hidden = hide || !state.image;
-    els.infoBtn.hidden = hide || !state.image;
-    if (state.compareMode && state.image) {
-      els.compareOverlayLabel.hidden = false;
-      els.compareOverlayLabel.textContent = "Original";
-    } else if (state.compareHoverOverlay && state.image) {
-      els.compareOverlayLabel.hidden = false;
-      els.compareOverlayLabel.textContent = "Compressed";
-    } else {
-      els.compareOverlayLabel.hidden = true;
-    }
-  };
   const setCompareHoverOverlay = (active) => {
     if (state.compareHoverOverlay === active) return;
     state.compareHoverOverlay = active;
-    updateCompareOverlayControls();
+    syncCompareUi();
     rerender();
   };
   const startCompareHover = () => {
@@ -783,15 +790,13 @@ function wireCompression() {
     e.preventDefault();
     if (state.compareMode) return;
     state.compareMode = true;
-    updateCompareButton();
-    updateCompareOverlayControls();
+    syncCompareUi();
     rerender();
   };
   const endComparePress = () => {
     if (!state.compareMode) return;
     state.compareMode = false;
-    updateCompareButton();
-    updateCompareOverlayControls();
+    syncCompareUi();
     rerender();
   };
   els.compareBtn.addEventListener("pointerenter", startCompareHover);
@@ -837,13 +842,9 @@ function scheduleEstimate() {
   setPreviewLoading(true);
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
   state.compressedBitmap = null;
-  if (state.compareMode) {
-    state.compareMode = false;
-    els.compareBtn.classList.remove("active");
-    els.compareBtn.textContent = "Compare";
-  }
+  state.compareMode = false;
   state.compareHoverOverlay = false;
-  els.compareOverlayLabel.hidden = true;
+  syncCompareUi();
   rerender();
   clearTimeout(estimateTimer);
   estimateTimer = setTimeout(runEstimate, 250);
@@ -899,6 +900,8 @@ function openCropModal() {
   modalState.crop = { ...state.crop };
   modalState.drag = null;
   modalState.removeCrop = false;
+  modalState.focal = { ...state.focal };
+  els.cropFocalPreset.value = `${modalState.focal.x},${modalState.focal.y}`;
   els.modal.hidden = false;
   els.modal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
@@ -913,6 +916,7 @@ function closeCropModal() {
   modalState.active = false;
   modalState.drag = null;
   modalState.removeCrop = false;
+  modalState.focal = null;
   els.modal.hidden = true;
   els.modal.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
@@ -1021,7 +1025,7 @@ function drawModalCropSafeZone(ctx, rect, scale) {
     ctx,
     { width: rect.w, height: rect.h },
     safeZoneWidth,
-    effectiveFocal().x,
+    modalState.focal ? modalState.focal.x : effectiveFocal().x,
     safeZoneSettings.safeZoneColor || "#00FF00",
     warmZoneBandWidth,
     safeZoneSettings.safeZoneFillAlpha,
@@ -1170,8 +1174,12 @@ function wireCropModal() {
         state.outputAspect = state.outputW / state.outputH;
       }
       state.hasManualCrop = !modalState.removeCrop;
+      if (modalState.focal) {
+        state.focal = { ...modalState.focal };
+      }
       syncOutputAndQualityToInputs();
       highlightFocalPreset();
+      updateFocalAttributeHint();
       updateRemoveCropVisibility();
       updateResizeLink();
       rerender();
