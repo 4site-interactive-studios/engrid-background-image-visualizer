@@ -59,6 +59,7 @@ const els = {
   error: $("error"),
   canvas: $("preview-canvas"),
   previewSpinner: $("preview-spinner"),
+  compareOverlayLabel: $("compare-overlay-label"),
   emptyState: $("empty-state"),
   sourceInfo: $("source-info"),
   focalPreset: $("focal-preset"),
@@ -454,8 +455,10 @@ function handleClearImage() {
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
   state.compressedBitmap = null;
   state.compareMode = false;
+  state.compareHoverOverlay = false;
   updateRemoveCropVisibility();
   updateFocalAttributeHint();
+  els.compareOverlayLabel.hidden = true;
   els.imageUrl.value = "";
   els.layout.classList.remove("has-image");
   lastTriedUrl = null;
@@ -752,6 +755,15 @@ function wireCompression() {
     const hide = state.compareMode || state.compareHoverOverlay;
     els.canvasClear.hidden = hide || !state.image;
     els.infoBtn.hidden = hide || !state.image;
+    if (state.compareMode && state.image) {
+      els.compareOverlayLabel.hidden = false;
+      els.compareOverlayLabel.textContent = "Original";
+    } else if (state.compareHoverOverlay && state.image) {
+      els.compareOverlayLabel.hidden = false;
+      els.compareOverlayLabel.textContent = "Compressed";
+    } else {
+      els.compareOverlayLabel.hidden = true;
+    }
   };
   const setCompareHoverOverlay = (active) => {
     if (state.compareHoverOverlay === active) return;
@@ -831,6 +843,7 @@ function scheduleEstimate() {
     els.compareBtn.textContent = "Compare";
   }
   state.compareHoverOverlay = false;
+  els.compareOverlayLabel.hidden = true;
   rerender();
   clearTimeout(estimateTimer);
   estimateTimer = setTimeout(runEstimate, 250);
