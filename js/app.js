@@ -21,7 +21,7 @@ const PRESETS = [
   { id: "oceana-left", name: "Oceana - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 350 },
   { id: "ran-left", name: "RAN - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 300 },
   { id: "shatterproof-left", name: "Shatterproof - Left Layout", layout: "left", formWidth: 640, safeZoneWidth: 350 },
-  { id: "wwf-left", name: "WWF - Left Layout", layout: "left", formWidth: 1200, safeZoneWidth: 1200 },
+  { id: "wwf-center", name: "WWF - Center Layout", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
 const LAYOUT_LABEL = { left: "Left", center: "Center", right: "Right" };
 
