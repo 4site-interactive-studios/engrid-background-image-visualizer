@@ -15,6 +15,58 @@ const MIN_RECOMMENDED_LONGEST_SIDE = 1500;
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
 const MIN_RECOMMENDED_HEIGHT = 750;
 
+const PRESETS = [
+  { id: "ngs-left", name: "NGS - Left Layout", layout: "left", formWidth: 550, safeZoneWidth: 350 },
+  { id: "ran-left", name: "RAN - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 300 },
+];
+const LAYOUT_LABEL = { left: "Left", center: "Center", right: "Right" };
+
+function matchingPresetId() {
+  const s = state.settings;
+  for (const p of PRESETS) {
+    if (p.layout === s.layout && p.formWidth === s.formWidth && p.safeZoneWidth === s.safeZoneWidth) {
+      return p.id;
+    }
+  }
+  return null;
+}
+
+function syncPresetUI() {
+  if (state.settings.preset == null) {
+    state.settings.preset = matchingPresetId() || "custom";
+  }
+  const id = state.settings.preset;
+  els.preset.value = id;
+  const p = PRESETS.find((p) => p.id === id);
+  if (p) {
+    els.presetDetailsText.textContent = `${LAYOUT_LABEL[p.layout]} · ${p.formWidth}px form · ${p.safeZoneWidth}px safe zone`;
+    els.formSafeZoneFieldset.classList.add("is-preset");
+  } else {
+    els.presetDetailsText.textContent = "";
+    els.formSafeZoneFieldset.classList.remove("is-preset");
+  }
+}
+
+function applyPreset(id) {
+  const p = PRESETS.find((p) => p.id === id);
+  state.settings.preset = id;
+  if (p) {
+    state.settings.layout = p.layout;
+    state.settings.formWidth = p.formWidth;
+    state.settings.safeZoneWidth = p.safeZoneWidth;
+  }
+  persistSettings();
+  syncSettingsToInputs();
+  applyLayoutFromSettings();
+  syncPresetUI();
+  rerender();
+}
+
+function markPresetCustomIfChanged() {
+  const matching = matchingPresetId();
+  state.settings.preset = matching || "custom";
+}
+
 const state = {
   settings: loadSettings(),
   image: null,
@@ -40,6 +92,10 @@ const els = {
   formWidth: $("form-width"),
   formLayout: $("form-layout"),
   safeZoneWidth: $("safe-zone-width"),
+  preset: $("preset"),
+  presetDetails: $("preset-details"),
+  presetDetailsText: $("preset-details-text"),
+  formSafeZoneFieldset: document.querySelector(".form-safezone-fieldset"),
   safeZoneColor: $("safe-zone-color"),
   resetSafeZoneColor: $("reset-safe-zone-color"),
   infoBtn: $("info-btn"),
@@ -516,22 +572,31 @@ async function handleUrl(url) {
 }
 
 function wireSettingsInputs() {
+  els.preset.addEventListener("change", () => {
+    applyPreset(els.preset.value);
+  });
   els.formWidth.addEventListener("input", () => {
     state.settings.formWidth = clampInt(els.formWidth.value, 100, 2000, 550);
+    markPresetCustomIfChanged();
     persistSettings();
     applyLayoutFromSettings();
+    syncPresetUI();
     rerender();
   });
   els.formLayout.addEventListener("change", () => {
     state.settings.layout = els.formLayout.value;
+    markPresetCustomIfChanged();
     persistSettings();
     applyLayoutFromSettings();
+    syncPresetUI();
     if (state.image && !state.hasManualCrop) recomputeCropFromFocal();
     rerender();
   });
   els.safeZoneWidth.addEventListener("input", () => {
     state.settings.safeZoneWidth = clampInt(els.safeZoneWidth.value, 50, 1000, 350);
+    markPresetCustomIfChanged();
     persistSettings();
+    syncPresetUI();
     rerender();
   });
   els.safeZoneColor.addEventListener("input", () => {
@@ -1230,6 +1295,7 @@ function wireCropModal() {
 function init() {
   syncSettingsToInputs();
   applyLayoutFromSettings();
+  syncPresetUI();
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
   wireSettingsInputs();

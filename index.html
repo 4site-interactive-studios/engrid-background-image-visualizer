@@ -17,6 +17,21 @@
       <fieldset class="form-safezone-fieldset">
         <legend>Preview</legend>
         <label>
+          <span>Preset</span>
+          <select id="preset">
+            <option value="ngs-left">NGS - Left Layout</option>
+            <option value="ran-left">RAN - Left Layout</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <p class="preset-details" id="preset-details">
+          <span class="preset-details-text" id="preset-details-text"></span>
+          <span class="preset-details-color">
+            <input type="color" id="safe-zone-color" value="#00FF00" title="Safe zone color" />
+            <button type="button" class="link-btn" id="reset-safe-zone-color" title="Reset safe zone color">Reset</button>
+          </span>
+        </p>
+        <label class="form-position-row">
           <span>Form position</span>
           <select id="form-layout">
             <option value="left" selected>Left</option>
@@ -24,17 +39,13 @@
             <option value="right">Right</option>
           </select>
         </label>
-        <label>
+        <label class="form-width-row">
           <span>Form width (px)</span>
           <input type="number" id="form-width" min="100" max="2000" value="550" />
         </label>
-        <label class="safe-zone-setting">
+        <label class="safe-zone-setting safe-zone-row">
           <span>Image safe zone (px)</span>
-          <span class="safe-zone-controls">
-            <input type="number" id="safe-zone-width" min="50" max="1000" value="350" />
-            <input type="color" id="safe-zone-color" value="#00FF00" title="Safe zone color" />
-            <button type="button" class="link-btn" id="reset-safe-zone-color" title="Reset safe zone color">Reset</button>
-          </span>
+          <input type="number" id="safe-zone-width" min="50" max="1000" value="350" />
         </label>
         <label class="focal-point-setting">
           <span>Image focal point</span>
@@ -204,6 +215,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=4"></script>
+  <script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>
