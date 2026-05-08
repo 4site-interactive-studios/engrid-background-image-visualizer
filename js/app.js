@@ -17,7 +17,11 @@ const MIN_RECOMMENDED_HEIGHT = 750;
 
 const PRESETS = [
   { id: "ngs-left", name: "NGS - Left Layout", layout: "left", formWidth: 550, safeZoneWidth: 350 },
+  { id: "nwf-left", name: "NWF - Left Layout", layout: "left", formWidth: 800, safeZoneWidth: 200 },
+  { id: "oceana-left", name: "Oceana - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 350 },
   { id: "ran-left", name: "RAN - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 300 },
+  { id: "shatterproof-left", name: "Shatterproof - Left Layout", layout: "left", formWidth: 640, safeZoneWidth: 350 },
+  { id: "wwf-left", name: "WWF - Left Layout", layout: "left", formWidth: 1200, safeZoneWidth: 1200 },
 ];
 const LAYOUT_LABEL = { left: "Left", center: "Center", right: "Right" };
 
@@ -593,7 +597,7 @@ function wireSettingsInputs() {
     rerender();
   });
   els.safeZoneWidth.addEventListener("input", () => {
-    state.settings.safeZoneWidth = clampInt(els.safeZoneWidth.value, 50, 1000, 350);
+    state.settings.safeZoneWidth = clampInt(els.safeZoneWidth.value, 50, 2000, 350);
     markPresetCustomIfChanged();
     persistSettings();
     syncPresetUI();
