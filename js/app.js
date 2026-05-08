@@ -571,6 +571,36 @@ function wireInfoModal() {
   });
 }
 
+function wireVideoModal() {
+  const thumb = document.getElementById("video-thumb");
+  const modal = document.getElementById("video-modal");
+  const video = document.getElementById("overview-video");
+  if (!thumb || !modal || !video) return;
+
+  const open = () => {
+    if (!video.src) video.src = "assets/overview.mp4";
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    video.play().catch(() => {});
+  };
+  const close = () => {
+    video.pause();
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+  };
+
+  thumb.addEventListener("click", open);
+  modal.addEventListener("click", (e) => {
+    if (e.target.dataset.closeVideo !== undefined) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !e.defaultPrevented && !modal.hidden) {
+      e.preventDefault();
+      close();
+    }
+  });
+}
+
 let urlInputTimer = null;
 let lastTriedUrl = null;
 let loadGeneration = 0;
@@ -1208,6 +1238,7 @@ function init() {
   wireCompression();
   wireCropModal();
   wireInfoModal();
+  wireVideoModal();
 
   const ro = new ResizeObserver(() => rerender());
   ro.observe(els.canvas.parentElement);

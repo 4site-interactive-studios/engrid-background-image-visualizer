@@ -105,6 +105,10 @@
             <button type="button" id="upload-btn" class="empty-btn">Choose a file</button>
             <span class="muted">or paste an image URL</span>
             <input type="url" id="image-url" size="31" placeholder="https://example.com/photo.jpg" />
+            <button type="button" id="video-thumb" class="video-thumb" aria-label="Watch overview video">
+              <span class="video-thumb-play" aria-hidden="true">▶</span>
+              <span class="video-thumb-label">Watch overview</span>
+            </button>
           </div>
         </div>
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden />
@@ -189,6 +193,14 @@
         <button type="button" data-close>Cancel</button>
         <button type="button" id="crop-save" class="primary">Save</button>
       </footer>
+    </div>
+  </div>
+
+  <div id="video-modal" class="modal" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-video></div>
+    <div class="modal-dialog video-dialog" role="dialog" aria-label="Overview video" aria-modal="true">
+      <button type="button" class="icon-btn video-close" data-close-video aria-label="Close">×</button>
+      <video id="overview-video" preload="none" controls playsinline></video>
     </div>
   </div>
 
