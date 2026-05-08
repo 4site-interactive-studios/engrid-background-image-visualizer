@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=30";
 import {
   loadFromFile,
   loadFromUrl,
@@ -6,9 +6,9 @@ import {
   clampCrop,
   cropToImageData,
   formatBytes,
-} from "./imagework.js";
-import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js";
-import { encodeJpeg, triggerDownload, suggestFilename } from "./compress.js";
+} from "./imagework.js?v=30";
+import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js?v=30";
+import { encodeJpeg, triggerDownload, suggestFilename } from "./compress.js?v=30";
 
 const $ = (id) => document.getElementById(id);
 const MIN_RECOMMENDED_LONGEST_SIDE = 1500;
@@ -43,12 +43,28 @@ function syncPresetUI() {
   els.preset.value = id;
   const p = PRESETS.find((p) => p.id === id);
   if (p) {
-    els.presetDetailsText.textContent = `${LAYOUT_LABEL[p.layout]} · ${p.formWidth}px form · ${p.safeZoneWidth}px safe zone`;
+    els.presetDetailsText.textContent = `${LAYOUT_LABEL[p.layout]} · ${p.formWidth}px form · ${p.safeZoneWidth}px `;
     els.formSafeZoneFieldset.classList.add("is-preset");
   } else {
     els.presetDetailsText.textContent = "";
     els.formSafeZoneFieldset.classList.remove("is-preset");
   }
+  updateResetSafeZoneColorVisibility();
+}
+
+function isDefaultSafeZoneColor() {
+  return (state.settings.safeZoneColor || "").toLowerCase() === "#00ff00";
+}
+
+function updateResetSafeZoneColorVisibility() {
+  els.resetSafeZoneColor.hidden = isDefaultSafeZoneColor();
+}
+
+function applySafeZoneColorVar() {
+  document.documentElement.style.setProperty(
+    "--zone-color",
+    state.settings.safeZoneColor || "#00ff00"
+  );
 }
 
 function applyPreset(id) {
@@ -79,7 +95,7 @@ const state = {
   outputW: 1800,
   outputH: 1200,
   outputAspect: 1800 / 1200,
-  quality: 75,
+  quality: 55,
   scale: 1,
   estimatedBytes: null,
   compressedBitmap: null,
@@ -110,7 +126,6 @@ const els = {
   clearImageRow: $("clear-image-row"),
   clearImage: $("clear-image"),
   canvasClear: $("canvas-clear"),
-  imageUrl: $("image-url"),
   metaDims: $("meta-dims"),
   metaSize: $("meta-size"),
   outputMetaLabel: $("output-meta-label"),
@@ -130,18 +145,14 @@ const els = {
   outputW: $("output-w"),
   outputH: $("output-h"),
   resetCrop: $("reset-crop"),
-  cropOpen: $("crop-open"),
   resizeTo2000: $("resize-to-2000"),
   useIntrinsic: $("use-intrinsic"),
   compareBtn: $("compare-btn"),
   quality: $("quality"),
-  qualityOut: $("quality-out"),
   compressionWarning: $("compression-warning"),
   download: $("download"),
-  modal: $("crop-modal"),
+  modal: $("crop-inline"),
   modalCanvas: $("modal-canvas"),
-  cropSave: $("crop-save"),
-  cropSizeReadout: $("crop-size-readout"),
   cropSizeWarning: $("crop-size-warning"),
 };
 
@@ -215,7 +226,7 @@ function updateCenterModeControls() {
   const isCenter = isCenterFormPosition();
   els.safeZoneSetting.hidden = isCenter;
   els.focalPointSetting.hidden = isCenter;
-  els.cropFocalSetting.hidden = isCenter;
+  if (els.cropFocalSetting) els.cropFocalSetting.hidden = isCenter;
   updateFocalAttributeHint();
 }
 
@@ -229,7 +240,6 @@ function updateFocalAttributeHint() {
     "0,0.5": "left center",
     "0,1": "left bottom",
     "0.5,0": "center top",
-    "0.5,0.5": "center center",
     "0.5,1": "center bottom",
     "1,0": "right top",
     "1,0.5": "right center",
@@ -238,7 +248,9 @@ function updateFocalAttributeHint() {
   const value = `${state.focal.x},${state.focal.y}`;
   const position = posMap[value];
   if (position) {
-    els.focalAttributeHint.textContent = `ENgrid attribute: data-background-position="${position}"`;
+    const attr = `data-background-position="${position}"`;
+    els.focalAttributeHint.dataset.attr = attr;
+    els.focalAttributeHint.innerHTML = `ENgrid attribute: <code>${attr}</code>`;
     els.focalAttributeHint.hidden = false;
   } else {
     els.focalAttributeHint.hidden = true;
@@ -281,13 +293,20 @@ function syncOutputAndQualityToInputs() {
   updateUseIntrinsicVisibility();
 }
 
+const QUALITY_PRESETS = [40, 55, 70, 100];
+
+function snapQualityToPreset(q) {
+  let best = QUALITY_PRESETS[0];
+  let bestDiff = Math.abs(q - best);
+  for (const p of QUALITY_PRESETS) {
+    const d = Math.abs(q - p);
+    if (d < bestDiff) { best = p; bestDiff = d; }
+  }
+  return best;
+}
+
 function updateQualityDisplay() {
-  const min = Number(els.quality.min) || 0;
-  const max = Number(els.quality.max) || 100;
-  const pct = ((state.quality - min) / (max - min)) * 100;
-  els.qualityOut.value = state.quality;
-  els.quality.style.setProperty("--quality-pos", `${pct}%`);
-  els.qualityOut.style.setProperty("--quality-pos", `${pct}%`);
+  els.quality.value = String(state.quality);
 }
 
 function syncCompareUi() {
@@ -310,16 +329,8 @@ function syncCompareUi() {
 }
 
 function updateCompressionWarning() {
-  if (state.quality < 40) {
-    els.compressionWarning.hidden = false;
-    els.compressionWarning.textContent = "Quality is very low. Image artifacts may be visible.";
-  } else if (state.quality > 80) {
-    els.compressionWarning.hidden = false;
-    els.compressionWarning.textContent = "Quality is high. File size savings may be limited.";
-  } else {
-    els.compressionWarning.hidden = true;
-    els.compressionWarning.textContent = "";
-  }
+  els.compressionWarning.hidden = true;
+  els.compressionWarning.textContent = "";
 }
 
 function updateOutputDimensionLabels() {
@@ -355,7 +366,7 @@ function updateOutputMeta() {
   }
 
   els.outputMetaLabel.textContent = state.hasManualCrop ? "Cropped:" : "Output:";
-  els.outputMetaDims.textContent = `${state.outputW} × ${state.outputH}`;
+  els.outputMetaDims.textContent = `${state.outputW.toLocaleString("en-US")} × ${state.outputH.toLocaleString("en-US")}`;
   els.outputMetaSize.textContent = state.estimatedBytes != null
     ? formatBytes(state.estimatedBytes)
     : "Estimating...";
@@ -411,6 +422,7 @@ function recomputeCropFromFocal() {
   if (!state.image) return;
   state.crop = computeCropFromFocalPoint(state.image, effectiveFocal(), state.outputW, state.outputH);
   updateRemoveCropVisibility();
+  syncCropUiFromState();
 }
 
 function fullImageCrop() {
@@ -444,7 +456,6 @@ function resizeOutputToMax2000() {
 
 function updateRemoveCropVisibility() {
   els.resetCrop.hidden = !state.hasManualCrop;
-  els.cropOpen.textContent = state.hasManualCrop ? "Edit crop..." : "Crop";
 }
 
 function snapFocalToPreset(focal) {
@@ -455,7 +466,7 @@ function snapFocalToPreset(focal) {
 function highlightFocalPreset() {
   const value = `${state.focal.x},${state.focal.y}`;
   els.focalPreset.value = value;
-  els.cropFocalPreset.value = value;
+  if (els.cropFocalPreset) els.cropFocalPreset.value = value;
 }
 
 function setFocalFromPreset(value) {
@@ -467,7 +478,7 @@ function setFocalFromPreset(value) {
 async function applyImage(image) {
   state.image = image;
   els.sourceInfo.hidden = false;
-  els.metaDims.textContent = `${image.width} × ${image.height}`;
+  els.metaDims.textContent = `${image.width.toLocaleString("en-US")} × ${image.height.toLocaleString("en-US")}`;
   els.metaSize.textContent = formatBytes(image.byteLength);
 
   const saved = loadImageState(image.hash);
@@ -475,7 +486,7 @@ async function applyImage(image) {
     state.focal = snapFocalToPreset(saved.focalPoint || { x: 0.5, y: 0.5 });
     state.outputW = saved.outputW || image.width;
     state.outputH = saved.outputH || image.height;
-    state.quality = saved.quality ?? 75;
+    state.quality = snapQualityToPreset(saved.quality ?? 55);
     state.hasManualCrop = !!saved.hasManualCrop;
     state.crop = saved.hasManualCrop && saved.cropFrame
       ? clampCrop(saved.cropFrame, image)
@@ -491,7 +502,7 @@ async function applyImage(image) {
       state.outputW = image.width;
       state.outputH = image.height;
     }
-    state.quality = 75;
+    state.quality = 55;
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
 
@@ -500,7 +511,6 @@ async function applyImage(image) {
   highlightFocalPreset();
   updateFocalAttributeHint();
   els.download.disabled = false;
-  els.cropOpen.disabled = false;
   els.clearImageRow.hidden = false;
   els.canvasClear.hidden = false;
   els.infoBtn.hidden = false;
@@ -511,6 +521,7 @@ async function applyImage(image) {
   state.estimatedBytes = null;
   rerender();
   scheduleEstimate();
+  activateCropUi();
 }
 
 function handleClearImage() {
@@ -520,13 +531,13 @@ function handleClearImage() {
   state.outputW = 1800;
   state.outputH = 1200;
   state.outputAspect = 1800 / 1200;
-  state.quality = 75;
+  state.quality = 55;
   state.estimatedBytes = null;
   els.sourceInfo.hidden = true;
   els.metaDims.textContent = "";
   els.metaSize.textContent = "";
-  els.cropOpen.disabled = true;
   els.download.disabled = true;
+  deactivateCropUi();
   els.clearImageRow.hidden = true;
   els.canvasClear.hidden = true;
   els.infoBtn.hidden = true;
@@ -539,7 +550,6 @@ function handleClearImage() {
   updateRemoveCropVisibility();
   updateFocalAttributeHint();
   syncCompareUi();
-  els.imageUrl.value = "";
   els.layout.classList.remove("has-image");
   lastTriedUrl = null;
   clearError();
@@ -606,13 +616,19 @@ function wireSettingsInputs() {
   els.safeZoneColor.addEventListener("input", () => {
     state.settings.safeZoneColor = els.safeZoneColor.value;
     persistSettings();
+    updateResetSafeZoneColorVisibility();
+    applySafeZoneColorVar();
     rerender();
+    renderModal();
   });
   els.resetSafeZoneColor.addEventListener("click", () => {
     state.settings.safeZoneColor = "#00FF00";
     els.safeZoneColor.value = "#00FF00";
     persistSettings();
+    updateResetSafeZoneColorVisibility();
+    applySafeZoneColorVar();
     rerender();
+    renderModal();
   });
 }
 
@@ -708,21 +724,6 @@ function wireImageInput() {
   els.clearImage.addEventListener("click", handleClearImage);
   els.canvasClear.addEventListener("click", handleClearImage);
 
-  els.imageUrl.addEventListener("input", () => {
-    clearTimeout(urlInputTimer);
-    const v = els.imageUrl.value.trim();
-    if (/^https?:\/\/\S+\.\S+/i.test(v)) {
-      urlInputTimer = setTimeout(() => attemptUrlLoad(v), 600);
-    }
-  });
-  els.imageUrl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      clearTimeout(urlInputTimer);
-      attemptUrlLoad(els.imageUrl.value.trim());
-    }
-  });
-
   document.addEventListener("paste", (e) => {
     const target = e.target;
     const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
@@ -739,18 +740,32 @@ function wireImageInput() {
       }
     }
 
-    if (inField && target !== els.imageUrl) return;
+    if (inField) return;
     const text = e.clipboardData?.getData("text")?.trim();
     if (text && /^https?:\/\//i.test(text)) {
       e.preventDefault();
       clearTimeout(urlInputTimer);
-      els.imageUrl.value = text;
       attemptUrlLoad(text);
     }
   });
 }
 
 function wireFocalAndCrop() {
+  els.focalAttributeHint.addEventListener("click", async () => {
+    const attr = els.focalAttributeHint.dataset.attr;
+    if (!attr) return;
+    try {
+      await navigator.clipboard.writeText(attr);
+      const prev = els.focalAttributeHint.dataset.tooltip || "";
+      els.focalAttributeHint.dataset.tooltip = "Copied!";
+      els.focalAttributeHint.classList.add("copied");
+      setTimeout(() => {
+        els.focalAttributeHint.dataset.tooltip = prev;
+        els.focalAttributeHint.classList.remove("copied");
+      }, 1200);
+    } catch (e) {}
+  });
+
   els.focalPreset.addEventListener("change", () => {
     if (!state.image) return;
     setFocalFromPreset(els.focalPreset.value);
@@ -761,12 +776,14 @@ function wireFocalAndCrop() {
     updateFocalAttributeHint();
   });
 
-  els.cropFocalPreset.addEventListener("change", () => {
-    if (!state.image || !modalState.active) return;
-    const [x, y] = els.cropFocalPreset.value.split(",").map(parseFloat);
-    modalState.focal = { x, y };
-    renderModal();
-  });
+  if (els.cropFocalPreset) {
+    els.cropFocalPreset.addEventListener("change", () => {
+      if (!state.image || !modalState.active) return;
+      const [x, y] = els.cropFocalPreset.value.split(",").map(parseFloat);
+      modalState.focal = { x, y };
+      renderModal();
+    });
+  }
 
   els.outputW.addEventListener("input", () => {
     state.outputW = clampInt(els.outputW.value, 100, 6000, state.outputW);
@@ -812,13 +829,6 @@ function wireFocalAndCrop() {
 
   els.resetCrop.addEventListener("click", () => {
     if (!state.image) return;
-    if (modalState.active) {
-      modalState.removeCrop = true;
-      modalState.crop = fullImageCrop();
-      renderModal();
-      return;
-    }
-
     state.hasManualCrop = false;
     state.crop = fullImageCrop();
     state.outputW = state.crop.w;
@@ -828,6 +838,7 @@ function wireFocalAndCrop() {
     updateRemoveCropVisibility();
     updateResizeLink();
     rerender();
+    syncCropUiFromState();
     persistImageState();
     scheduleEstimate();
   });
@@ -864,11 +875,12 @@ function applyDrag(drag, dx, dy, aspect) {
 
 function wireCompression() {
   els.quality.addEventListener("input", () => {
-    state.quality = clampInt(els.quality.value, 1, 100, 75);
+    state.quality = snapQualityToPreset(clampInt(els.quality.value, 1, 100, 55));
     updateQualityDisplay();
     updateCompressionWarning();
     scheduleEstimate();
     persistImageState();
+    els.quality.blur();
   });
 
   const setCompareHoverOverlay = (active) => {
@@ -993,33 +1005,35 @@ function updateSizeEstimate() {
   updateOutputMeta();
 }
 
-function openCropModal() {
+function activateCropUi() {
   if (!state.image) return;
   modalState.active = true;
   modalState.crop = { ...state.crop };
   modalState.drag = null;
   modalState.removeCrop = false;
   modalState.focal = { ...state.focal };
-  els.cropFocalPreset.value = `${modalState.focal.x},${modalState.focal.y}`;
   els.modal.hidden = false;
   els.modal.setAttribute("aria-hidden", "false");
-  document.body.style.overflow = "hidden";
   requestAnimationFrame(() => {
     sizeModalCanvas();
     renderModal();
-    els.cropSave.focus();
   });
 }
 
-function closeCropModal() {
+function deactivateCropUi() {
   modalState.active = false;
   modalState.drag = null;
   modalState.removeCrop = false;
   modalState.focal = null;
   els.modal.hidden = true;
   els.modal.setAttribute("aria-hidden", "true");
-  document.body.style.overflow = "";
-  els.cropOpen.focus();
+}
+
+function syncCropUiFromState() {
+  if (!modalState.active) return;
+  modalState.crop = { ...state.crop };
+  modalState.focal = { ...state.focal };
+  renderModal();
 }
 
 function sizeModalCanvas() {
@@ -1076,9 +1090,6 @@ function renderModal() {
     ctx.restore();
   }
 
-  els.cropSizeReadout.textContent = c
-    ? `Crop: ${Math.round(c.w)} × ${Math.round(c.h)} px`
-    : "";
   updateCropSizeWarning(c);
 }
 
@@ -1190,20 +1201,38 @@ function modalCanvasCoords(e) {
   return { px, py };
 }
 
+function commitModalCrop() {
+  if (!state.image || !modalState.crop) return;
+  const c = modalState.crop;
+  if (c.w < 20 || c.h < 20) {
+    syncCropUiFromState();
+    return;
+  }
+  state.crop = { x: Math.round(c.x), y: Math.round(c.y), w: Math.round(c.w), h: Math.round(c.h) };
+  state.outputW = state.crop.w;
+  state.outputH = state.crop.h;
+  state.outputAspect = state.outputW / state.outputH;
+  if (Math.max(state.outputW, state.outputH) > 2000) {
+    const ratio = 2000 / Math.max(state.outputW, state.outputH);
+    state.outputW = Math.max(1, Math.round(state.outputW * ratio));
+    state.outputH = Math.max(1, Math.round(state.outputH * ratio));
+    state.outputAspect = state.outputW / state.outputH;
+  }
+  state.hasManualCrop = !modalState.removeCrop;
+  if (modalState.focal) {
+    state.focal = { ...modalState.focal };
+  }
+  syncOutputAndQualityToInputs();
+  highlightFocalPreset();
+  updateFocalAttributeHint();
+  updateRemoveCropVisibility();
+  updateResizeLink();
+  rerender();
+  persistImageState();
+  scheduleEstimate();
+}
+
 function wireCropModal() {
-  els.cropOpen.addEventListener("click", openCropModal);
-
-  els.modal.addEventListener("click", (e) => {
-    if (e.target.dataset.close !== undefined) closeCropModal();
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (modalState.active && e.key === "Escape") {
-      e.preventDefault();
-      closeCropModal();
-    }
-  });
-
   els.modalCanvas.addEventListener("mousedown", (e) => {
     if (!modalState.active || !state.image) return;
     const { px, py } = modalCanvasCoords(e);
@@ -1252,40 +1281,10 @@ function wireCropModal() {
   });
 
   window.addEventListener("mouseup", () => {
-    if (modalState.drag) modalState.drag = null;
-  });
-
-  els.cropSave.addEventListener("click", () => {
-    if (!state.image || !modalState.crop) {
-      closeCropModal();
-      return;
-    }
-    const c = modalState.crop;
-    if (c.w >= 20 && c.h >= 20) {
-      state.crop = { x: Math.round(c.x), y: Math.round(c.y), w: Math.round(c.w), h: Math.round(c.h) };
-      state.outputW = state.crop.w;
-      state.outputH = state.crop.h;
-      state.outputAspect = state.outputW / state.outputH;
-      if (Math.max(state.outputW, state.outputH) > 2000) {
-        const ratio = 2000 / Math.max(state.outputW, state.outputH);
-        state.outputW = Math.max(1, Math.round(state.outputW * ratio));
-        state.outputH = Math.max(1, Math.round(state.outputH * ratio));
-        state.outputAspect = state.outputW / state.outputH;
-      }
-      state.hasManualCrop = !modalState.removeCrop;
-      if (modalState.focal) {
-        state.focal = { ...modalState.focal };
-      }
-      syncOutputAndQualityToInputs();
-      highlightFocalPreset();
-      updateFocalAttributeHint();
-      updateRemoveCropVisibility();
-      updateResizeLink();
-      rerender();
-      persistImageState();
-      scheduleEstimate();
-    }
-    closeCropModal();
+    if (!modalState.drag) return;
+    const moved = modalState.drag.moved;
+    modalState.drag = null;
+    if (moved) commitModalCrop();
   });
 
   window.addEventListener("resize", () => {
@@ -1299,6 +1298,7 @@ function wireCropModal() {
 function init() {
   syncSettingsToInputs();
   applyLayoutFromSettings();
+  applySafeZoneColorVar();
   syncPresetUI();
   syncOutputAndQualityToInputs();
   highlightFocalPreset();

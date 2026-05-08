@@ -8,14 +8,14 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=4" />
+  <link rel="stylesheet" href="css/styles.css?v=9" />
 </head>
 <body>
   <main class="layout">
     <section class="image-input" aria-label="Image controls">
       <h1 class="app-title">Background Image Helper</h1>
       <fieldset class="form-safezone-fieldset">
-        <legend>Preview</legend>
+        <legend>Page and Image Settings</legend>
         <label>
           <span>Preset</span>
           <select id="preset">
@@ -29,11 +29,7 @@
           </select>
         </label>
         <p class="preset-details" id="preset-details">
-          <span class="preset-details-text" id="preset-details-text"></span>
-          <span class="preset-details-color">
-            <input type="color" id="safe-zone-color" value="#00FF00" title="Safe zone color" />
-            <button type="button" class="link-btn" id="reset-safe-zone-color" title="Reset safe zone color">Reset</button>
-          </span>
+          <span class="preset-details-text" id="preset-details-text"></span><span class="preset-details-end"><span class="safe-zone-label">safe zone</span><span class="safe-zone-controls"><span class="safe-zone-color-trigger"><input type="color" id="safe-zone-color" value="#00FF00" title="Click to change safe zone color" /></span><span class="safe-zone-tooltip"><button type="button" id="reset-safe-zone-color" hidden>Reset</button></span></span></span>
         </p>
         <label class="form-position-row">
           <span>Form position</span>
@@ -65,7 +61,16 @@
             <option value="1,1">Right Bottom</option>
           </select>
         </label>
-        <p class="focal-attribute-hint" id="focal-attribute-hint" hidden></p>
+        <div id="crop-inline" class="crop-inline" hidden aria-hidden="true">
+          <div class="crop-inline-canvas-wrap">
+            <canvas id="modal-canvas"></canvas>
+          </div>
+          <div class="crop-inline-controls">
+            <p id="crop-size-warning" class="crop-size-warning" hidden></p>
+            <button type="button" id="reset-crop" hidden>Remove crop</button>
+          </div>
+        </div>
+        <p class="focal-attribute-hint" id="focal-attribute-hint" data-tooltip="Click to copy to clipboard" hidden></p>
       </fieldset>
 
       <div class="error" id="error" hidden></div>
@@ -74,15 +79,8 @@
         <legend>Output</legend>
         <p class="source-info" id="source-info" hidden>
           <span class="source-info-line source-info-line-source"><span class="source-info-label">Source:</span> <span class="source-info-value"><span id="meta-dims"></span> · <span id="meta-size"></span></span></span>
-          <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span> <button type="button" class="link-btn" id="use-intrinsic">Use maximum size</button> <button type="button" class="link-btn" id="resize-to-2000" hidden>Resize to 2000px</button></span></span>
+          <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span class="size-with-tooltip" id="size-with-tooltip"><span id="output-meta-size"></span><span class="quality-tooltip" id="quality-tooltip" role="tooltip"><span class="quality-tooltip-label">Quality</span><select id="quality"><option value="40">Smaller file</option><option value="55" selected>Balanced</option><option value="70">Higher quality</option><option value="100">Maximum quality</option></select></span></span> <button type="button" class="link-btn" id="use-intrinsic">Use maximum resolution</button> <button type="button" class="link-btn" id="resize-to-2000" hidden>Resize to 2000px</button></span></span>
         </p>
-        <label class="quality-control">
-          <span>Quality</span>
-          <span class="quality-range-wrap">
-            <input type="range" id="quality" min="1" max="100" value="75" />
-            <output id="quality-out" class="quality-bubble">75</output>
-          </span>
-        </label>
         <p class="compression-warning" id="compression-warning" hidden></p>
         <div class="row-2" hidden>
           <label>
@@ -95,10 +93,7 @@
           </label>
         </div>
 
-        <div class="button-row">
-          <button type="button" id="crop-open" disabled>Crop</button>
-          <button type="button" id="compare-btn" hidden>Compare</button>
-        </div>
+        <button type="button" id="compare-btn" hidden>Compare</button>
         <button type="button" id="download" class="primary" disabled>Download optimized JPEG</button>
         <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image">Clear image</button></p>
       </fieldset>
@@ -115,11 +110,14 @@
           <div class="empty-state-content">
             <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" />
             <h1 class="app-title">Background Image Helper</h1>
-            <strong>Drop an image here</strong>
-            <span class="muted">or</span>
-            <button type="button" id="upload-btn" class="empty-btn">Choose a file</button>
-            <span class="muted">or paste an image URL</span>
-            <input type="url" id="image-url" size="31" placeholder="https://example.com/photo.jpg" />
+            <button type="button" id="upload-btn" class="dropzone" aria-label="Drop, click, or paste an image">
+              <svg class="dropzone-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="8" y="14" width="48" height="36" rx="4" />
+                <circle cx="22" cy="26" r="3" fill="currentColor" stroke="none" />
+                <path d="M8 42 L22 30 L34 40 L46 32 L56 38" />
+              </svg>
+              <span class="dropzone-text"><strong>Drop</strong>, <strong>click</strong>, or <strong>paste</strong></span>
+            </button>
             <button type="button" id="video-thumb" class="video-thumb" aria-label="Watch overview video">
               <span class="video-thumb-play" aria-hidden="true">▶</span>
               <span class="video-thumb-label">Watch overview</span>
@@ -175,42 +173,6 @@
 
   </main>
 
-  <div id="crop-modal" class="modal" hidden aria-hidden="true">
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-dialog" role="dialog" aria-label="Crop image" aria-modal="true">
-      <header class="modal-header">
-        <h2>Crop image</h2>
-        <button type="button" class="icon-btn" data-close aria-label="Close">×</button>
-      </header>
-      <p class="hint">Drag the rectangle to select the crop. Resize from the corner/edge handles. Output dimensions update to match the selection.</p>
-      <label class="crop-modal-control crop-focal-setting">
-        <span>Image focal point</span>
-        <select id="crop-focal-preset">
-          <option value="0,0">Left Top</option>
-          <option value="0,0.5">Left Center</option>
-          <option value="0,1">Left Bottom</option>
-          <option value="0.5,0">Center Top</option>
-          <option value="0.5,0.5" selected>Center</option>
-          <option value="0.5,1">Center Bottom</option>
-          <option value="1,0">Right Top</option>
-          <option value="1,0.5">Right Center</option>
-          <option value="1,1">Right Bottom</option>
-        </select>
-      </label>
-      <div class="modal-canvas-wrap">
-        <canvas id="modal-canvas"></canvas>
-      </div>
-      <p id="crop-size-warning" class="crop-size-warning" hidden></p>
-      <footer class="modal-actions">
-        <span id="crop-size-readout" class="crop-size-readout"></span>
-        <button type="button" id="reset-crop" hidden>Remove crop</button>
-        <span class="modal-actions-spacer"></span>
-        <button type="button" data-close>Cancel</button>
-        <button type="button" id="crop-save" class="primary">Save</button>
-      </footer>
-    </div>
-  </div>
-
   <div id="video-modal" class="modal" hidden aria-hidden="true">
     <div class="modal-backdrop" data-close-video></div>
     <div class="modal-dialog video-dialog" role="dialog" aria-label="Overview video" aria-modal="true">
@@ -219,6 +181,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=13"></script>
+  <script type="module" src="js/app.js?v=30"></script>
 </body>
 </html>
