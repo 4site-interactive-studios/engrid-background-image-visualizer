@@ -8,16 +8,16 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=9" />
+  <link rel="stylesheet" href="css/styles.css?v=21" />
 </head>
 <body>
   <main class="layout">
     <section class="image-input" aria-label="Image controls">
       <h1 class="app-title">Background Image Helper</h1>
       <fieldset class="form-safezone-fieldset">
-        <legend>Page and Image Settings</legend>
+        <legend>Settings</legend>
         <label>
-          <span>Preset</span>
+          <span>Preset<span class="safe-zone-controls"><button type="button" class="safe-zone-color-trigger" id="safe-zone-color" aria-label="Cycle safe zone color"></button></span></span>
           <select id="preset">
             <option value="ngs-left">NGS - Left Layout</option>
             <option value="nwf-left">NWF - Left Layout</option>
@@ -28,9 +28,6 @@
             <option value="custom">Custom</option>
           </select>
         </label>
-        <p class="preset-details" id="preset-details">
-          <span class="preset-details-text" id="preset-details-text"></span><span class="preset-details-end"><span class="safe-zone-label">safe zone</span><span class="safe-zone-controls"><span class="safe-zone-color-trigger"><input type="color" id="safe-zone-color" value="#00FF00" title="Click to change safe zone color" /></span><span class="safe-zone-tooltip"><button type="button" id="reset-safe-zone-color" hidden>Reset</button></span></span></span>
-        </p>
         <label class="form-position-row">
           <span>Form position</span>
           <select id="form-layout">
@@ -67,7 +64,7 @@
           </div>
           <div class="crop-inline-controls">
             <p id="crop-size-warning" class="crop-size-warning" hidden></p>
-            <button type="button" id="reset-crop" hidden>Remove crop</button>
+            <p class="reset-crop-row" id="reset-crop-row"><button type="button" id="reset-crop">Remove crop</button></p>
           </div>
         </div>
         <p class="focal-attribute-hint" id="focal-attribute-hint" data-tooltip="Click to copy to clipboard" hidden></p>
@@ -79,7 +76,9 @@
         <legend>Output</legend>
         <p class="source-info" id="source-info" hidden>
           <span class="source-info-line source-info-line-source"><span class="source-info-label">Source:</span> <span class="source-info-value"><span id="meta-dims"></span> · <span id="meta-size"></span></span></span>
-          <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span class="size-with-tooltip" id="size-with-tooltip"><span id="output-meta-size"></span><span class="quality-tooltip" id="quality-tooltip" role="tooltip"><span class="quality-tooltip-label">Quality</span><select id="quality"><option value="40">Smaller file</option><option value="55" selected>Balanced</option><option value="70">Higher quality</option><option value="100">Maximum quality</option></select></span></span> <button type="button" class="link-btn" id="use-intrinsic">Use maximum resolution</button> <button type="button" class="link-btn" id="resize-to-2000" hidden>Resize to 2000px</button></span></span>
+          <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span><span id="output-meta-compare" class="output-meta-compare"></span></span></span>
+          <label class="source-info-line setting-row"><span class="source-info-label">Max Resolution <span class="setting-value" id="max-resolution-val">2,000px</span></span><span class="range-wrap range-wrap-4"><input type="range" id="max-resolution" min="0" max="3" step="1" value="1"></span></label>
+          <label class="source-info-line setting-row"><span class="source-info-label">Quality <span class="setting-value" id="quality-val">Balanced</span></span><span class="range-wrap range-wrap-4"><input type="range" id="quality" min="0" max="3" step="1" value="1"></span></label>
         </p>
         <p class="compression-warning" id="compression-warning" hidden></p>
         <div class="row-2" hidden>
@@ -93,22 +92,20 @@
           </label>
         </div>
 
-        <button type="button" id="compare-btn" hidden>Compare</button>
         <button type="button" id="download" class="primary" disabled>Download optimized JPEG</button>
-        <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image">Clear image</button></p>
+        <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image"><svg class="trash-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6.5 1.5h3a1 1 0 0 1 1 1V3H13a.5.5 0 0 1 0 1h-.54l-.65 9.06A2 2 0 0 1 9.81 15H6.19a2 2 0 0 1-1.99-1.94L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm0 1.5V3h3v-.5h-3ZM4.55 4l.64 8.99a1 1 0 0 0 1 .94h3.62a1 1 0 0 0 1-.94L11.45 4h-6.9ZM7 6.5a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Zm2 0a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Z" fill="currentColor"/></svg>Clear image</button></p>
       </fieldset>
     </section>
 
     <section class="preview" aria-label="Preview">
       <div class="canvas-wrap" id="canvas-wrap">
         <canvas id="preview-canvas"></canvas>
-        <div class="compare-overlay-label" id="compare-overlay-label" hidden>Compressed</div>
         <div class="preview-spinner" id="preview-spinner" hidden aria-hidden="true">
           <span class="spinner" aria-label="Updating preview"></span>
         </div>
         <div class="empty-state" id="empty-state">
           <div class="empty-state-content">
-            <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" />
+            <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" draggable="false" />
             <h1 class="app-title">Background Image Helper</h1>
             <button type="button" id="upload-btn" class="dropzone" aria-label="Drop, click, or paste an image">
               <svg class="dropzone-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -126,7 +123,7 @@
         </div>
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden />
         <div class="canvas-btn-group canvas-btn-group-tr">
-          <button type="button" class="canvas-btn clear-btn" id="canvas-clear" hidden title="Clear image">Clear image</button>
+          <button type="button" class="canvas-btn compare-btn" id="compare-btn" hidden>Compare</button>
         </div>
         <div class="canvas-btn-group canvas-btn-group-br">
           <button type="button" class="canvas-btn info-btn" id="info-btn" hidden title="What does this preview show?" aria-label="Show preview legend">i</button>
@@ -181,6 +178,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=30"></script>
+  <script type="module" src="js/app.js?v=37"></script>
 </body>
 </html>

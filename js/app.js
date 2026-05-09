@@ -11,9 +11,7 @@ import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js?v
 import { encodeJpeg, triggerDownload, suggestFilename } from "./compress.js?v=30";
 
 const $ = (id) => document.getElementById(id);
-const MIN_RECOMMENDED_LONGEST_SIDE = 1500;
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
-const MIN_RECOMMENDED_HEIGHT = 750;
 
 const PRESETS = [
   { id: "ngs-left", name: "NGS - Left Layout", layout: "left", formWidth: 550, safeZoneWidth: 350 },
@@ -23,7 +21,6 @@ const PRESETS = [
   { id: "shatterproof-left", name: "Shatterproof - Left Layout", layout: "left", formWidth: 640, safeZoneWidth: 350 },
   { id: "wwf-center", name: "WWF - Center Layout", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
-const LAYOUT_LABEL = { left: "Left", center: "Center", right: "Right" };
 
 function matchingPresetId() {
   const s = state.settings;
@@ -43,21 +40,33 @@ function syncPresetUI() {
   els.preset.value = id;
   const p = PRESETS.find((p) => p.id === id);
   if (p) {
-    els.presetDetailsText.textContent = `${LAYOUT_LABEL[p.layout]} · ${p.formWidth}px form · ${p.safeZoneWidth}px `;
     els.formSafeZoneFieldset.classList.add("is-preset");
   } else {
-    els.presetDetailsText.textContent = "";
     els.formSafeZoneFieldset.classList.remove("is-preset");
   }
-  updateResetSafeZoneColorVisibility();
 }
 
-function isDefaultSafeZoneColor() {
-  return (state.settings.safeZoneColor || "").toLowerCase() === "#00ff00";
+const SAFE_ZONE_COLORS = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082"];
+const DEFAULT_SAFE_ZONE_COLOR = "#00FF00";
+
+function cycleSafeZoneColor() {
+  const current = (state.settings.safeZoneColor || DEFAULT_SAFE_ZONE_COLOR).toUpperCase();
+  const i = SAFE_ZONE_COLORS.indexOf(current);
+  const next = SAFE_ZONE_COLORS[(i + 1) % SAFE_ZONE_COLORS.length];
+  state.settings.safeZoneColor = next;
+  persistSettings();
+  applySafeZoneColorVar();
+  rerender();
+  renderModal();
 }
 
-function updateResetSafeZoneColorVisibility() {
-  els.resetSafeZoneColor.hidden = isDefaultSafeZoneColor();
+function resetSafeZoneColor() {
+  if ((state.settings.safeZoneColor || "").toUpperCase() === DEFAULT_SAFE_ZONE_COLOR) return;
+  state.settings.safeZoneColor = DEFAULT_SAFE_ZONE_COLOR;
+  persistSettings();
+  applySafeZoneColorVar();
+  rerender();
+  renderModal();
 }
 
 function applySafeZoneColorVar() {
@@ -75,6 +84,7 @@ function applyPreset(id) {
     state.settings.formWidth = p.formWidth;
     state.settings.safeZoneWidth = p.safeZoneWidth;
   }
+  resetSafeZoneColor();
   persistSettings();
   syncSettingsToInputs();
   applyLayoutFromSettings();
@@ -102,6 +112,7 @@ const state = {
   compareMode: false,
   compareHoverOverlay: false,
   hasManualCrop: false,
+  maxResolution: 2000,
 };
 
 const els = {
@@ -114,10 +125,8 @@ const els = {
   safeZoneWidth: $("safe-zone-width"),
   preset: $("preset"),
   presetDetails: $("preset-details"),
-  presetDetailsText: $("preset-details-text"),
   formSafeZoneFieldset: document.querySelector(".form-safezone-fieldset"),
   safeZoneColor: $("safe-zone-color"),
-  resetSafeZoneColor: $("reset-safe-zone-color"),
   infoBtn: $("info-btn"),
   infoModal: $("info-modal"),
   canvasWrap: $("canvas-wrap"),
@@ -125,16 +134,15 @@ const els = {
   fileInput: $("file-input"),
   clearImageRow: $("clear-image-row"),
   clearImage: $("clear-image"),
-  canvasClear: $("canvas-clear"),
   metaDims: $("meta-dims"),
   metaSize: $("meta-size"),
   outputMetaLabel: $("output-meta-label"),
   outputMetaDims: $("output-meta-dims"),
   outputMetaSize: $("output-meta-size"),
+  outputMetaCompare: $("output-meta-compare"),
   error: $("error"),
   canvas: $("preview-canvas"),
   previewSpinner: $("preview-spinner"),
-  compareOverlayLabel: $("compare-overlay-label"),
   emptyState: $("empty-state"),
   sourceInfo: $("source-info"),
   focalPreset: $("focal-preset"),
@@ -145,8 +153,9 @@ const els = {
   outputW: $("output-w"),
   outputH: $("output-h"),
   resetCrop: $("reset-crop"),
-  resizeTo2000: $("resize-to-2000"),
-  useIntrinsic: $("use-intrinsic"),
+  maxResolution: $("max-resolution"),
+  qualityVal: $("quality-val"),
+  maxResolutionVal: $("max-resolution-val"),
   compareBtn: $("compare-btn"),
   quality: $("quality"),
   compressionWarning: $("compression-warning"),
@@ -154,6 +163,7 @@ const els = {
   modal: $("crop-inline"),
   modalCanvas: $("modal-canvas"),
   cropSizeWarning: $("crop-size-warning"),
+  resetCropRow: $("reset-crop-row"),
 };
 
 const modalState = {
@@ -206,7 +216,6 @@ function syncSettingsToInputs() {
   els.formWidth.value = state.settings.formWidth;
   els.formLayout.value = state.settings.layout;
   els.safeZoneWidth.value = state.settings.safeZoneWidth;
-  els.safeZoneColor.value = state.settings.safeZoneColor || "#00FF00";
   updateCenterModeControls();
 }
 
@@ -283,30 +292,55 @@ function effectiveCropSafeZoneSettings() {
 
 function syncOutputAndQualityToInputs() {
   updateOutputDimensionLabels();
-  updateUseIntrinsicVisibility();
   updateOutputMeta();
   els.outputW.value = state.outputW;
   els.outputH.value = state.outputH;
   els.quality.value = state.quality;
   updateQualityDisplay();
+  updateMaxResolutionDisplay();
   updateCompressionWarning();
-  updateUseIntrinsicVisibility();
 }
 
-const QUALITY_PRESETS = [40, 55, 70, 100];
+const QUALITY_PRESETS = [
+  { value: 40, label: "Smaller file" },
+  { value: 55, label: "Balanced" },
+  { value: 70, label: "Higher quality" },
+  { value: 100, label: "Maximum quality" },
+];
+
+const MAX_RES_PRESETS = [
+  { value: 1000, label: "1,000px" },
+  { value: 2000, label: "2,000px" },
+  { value: 4000, label: "4,000px" },
+  { value: 0, label: "No limit" },
+];
+
+function nearestPresetIndex(presets, value) {
+  let bestIdx = 0;
+  let bestDiff = Math.abs(presets[0].value - value);
+  for (let i = 1; i < presets.length; i++) {
+    const d = Math.abs(presets[i].value - value);
+    if (d < bestDiff) { bestIdx = i; bestDiff = d; }
+  }
+  return bestIdx;
+}
 
 function snapQualityToPreset(q) {
-  let best = QUALITY_PRESETS[0];
-  let bestDiff = Math.abs(q - best);
-  for (const p of QUALITY_PRESETS) {
-    const d = Math.abs(q - p);
-    if (d < bestDiff) { best = p; bestDiff = d; }
-  }
-  return best;
+  return QUALITY_PRESETS[nearestPresetIndex(QUALITY_PRESETS, q)].value;
 }
 
 function updateQualityDisplay() {
-  els.quality.value = String(state.quality);
+  const idx = nearestPresetIndex(QUALITY_PRESETS, state.quality);
+  els.quality.value = String(idx);
+  if (els.qualityVal) els.qualityVal.textContent = QUALITY_PRESETS[idx].label;
+}
+
+function updateMaxResolutionDisplay() {
+  const idx = state.maxResolution === 0
+    ? MAX_RES_PRESETS.findIndex(p => p.value === 0)
+    : nearestPresetIndex(MAX_RES_PRESETS.filter(p => p.value > 0), state.maxResolution);
+  els.maxResolution.value = String(idx);
+  if (els.maxResolutionVal) els.maxResolutionVal.textContent = MAX_RES_PRESETS[idx].label;
 }
 
 function syncCompareUi() {
@@ -314,18 +348,7 @@ function syncCompareUi() {
   els.compareBtn.textContent = state.compareMode ? "Original" : "Compare";
 
   const hide = state.compareMode || state.compareHoverOverlay;
-  els.canvasClear.hidden = hide || !state.image;
   els.infoBtn.hidden = hide || !state.image;
-
-  if (state.compareMode && state.image) {
-    els.compareOverlayLabel.hidden = false;
-    els.compareOverlayLabel.textContent = "Original";
-  } else if (state.compareHoverOverlay && state.image) {
-    els.compareOverlayLabel.hidden = false;
-    els.compareOverlayLabel.textContent = "Compressed";
-  } else {
-    els.compareOverlayLabel.hidden = true;
-  }
 }
 
 function updateCompressionWarning() {
@@ -357,19 +380,39 @@ function updateOutputDimensionLabels() {
 }
 
 function updateOutputMeta() {
-  updateUseIntrinsicVisibility();
   if (!state.image) {
     els.outputMetaLabel.textContent = "Output:";
     els.outputMetaDims.textContent = "";
     els.outputMetaSize.textContent = "";
+    els.outputMetaCompare.textContent = "";
+    els.outputMetaSize.classList.remove("is-estimating", "is-error");
     return;
   }
 
-  els.outputMetaLabel.textContent = state.hasManualCrop ? "Cropped:" : "Output:";
+  els.outputMetaLabel.textContent = "Output:";
   els.outputMetaDims.textContent = `${state.outputW.toLocaleString("en-US")} × ${state.outputH.toLocaleString("en-US")}`;
-  els.outputMetaSize.textContent = state.estimatedBytes != null
-    ? formatBytes(state.estimatedBytes)
-    : "Estimating...";
+  if (state.estimatedBytes != null) {
+    els.outputMetaSize.textContent = formatBytes(state.estimatedBytes);
+    els.outputMetaSize.classList.remove("is-estimating", "is-error");
+    if (state.image.byteLength > 0) {
+      const pct = ((state.estimatedBytes - state.image.byteLength) / state.image.byteLength) * 100;
+      const rounded = Math.abs(pct).toFixed(0);
+      if (rounded === "0") {
+        els.outputMetaCompare.textContent = "";
+      } else {
+        const word = pct >= 0 ? "larger" : "smaller";
+        els.outputMetaCompare.textContent = ` (${rounded}% ${word})`;
+      }
+    } else {
+      els.outputMetaCompare.textContent = "";
+    }
+  } else {
+    if (!els.outputMetaSize.textContent || els.outputMetaSize.classList.contains("is-error")) {
+      els.outputMetaSize.textContent = "…";
+      els.outputMetaSize.classList.remove("is-error");
+    }
+    els.outputMetaSize.classList.add("is-estimating");
+  }
 }
 
 function outputIntrinsicDimensions() {
@@ -380,13 +423,8 @@ function outputIntrinsicDimensions() {
   };
 }
 
-function updateUseIntrinsicVisibility() {
-  const intrinsic = outputIntrinsicDimensions();
-  const isIntrinsic = intrinsic &&
-    state.outputW === intrinsic.w &&
-    state.outputH === intrinsic.h;
-
-  els.useIntrinsic.hidden = !intrinsic || isIntrinsic;
+function detailCap() {
+  return state.maxResolution > 0 ? state.maxResolution : Infinity;
 }
 
 function rerender() {
@@ -429,33 +467,34 @@ function fullImageCrop() {
   return { x: 0, y: 0, w: state.image.width, h: state.image.height };
 }
 
-function updateResizeLink() {
-  if (!state.image) {
-    els.resizeTo2000.hidden = true;
-    return;
-  }
-  const max = Math.max(state.outputW, state.outputH);
-  els.resizeTo2000.hidden = max <= MAX_RECOMMENDED_LONGEST_SIDE;
-}
-
-function resizeOutputToMax2000() {
-  if (!state.image) return;
-  if (state.outputW >= state.outputH) {
-    state.outputW = 2000;
-    state.outputH = Math.max(1, Math.round(2000 / state.outputAspect));
-  } else {
-    state.outputH = 2000;
-    state.outputW = Math.max(1, Math.round(2000 * state.outputAspect));
-  }
-  syncOutputAndQualityToInputs();
-  rerender();
-  persistImageState();
-  scheduleEstimate();
-  updateResizeLink();
+function clampOutputToCap() {
+  if (!state.image) return false;
+  const intrinsic = outputIntrinsicDimensions();
+  if (!intrinsic) return false;
+  const cap = detailCap();
+  const intrinsicMax = Math.max(intrinsic.w, intrinsic.h);
+  const targetMax = Math.min(cap, intrinsicMax);
+  const currentMax = Math.max(state.outputW, state.outputH);
+  if (Math.abs(currentMax - targetMax) < 1) return false;
+  const scale = targetMax / currentMax;
+  state.outputW = Math.max(1, Math.round(state.outputW * scale));
+  state.outputH = Math.max(1, Math.round(state.outputH * scale));
+  state.outputAspect = state.outputW / state.outputH;
+  return true;
 }
 
 function updateRemoveCropVisibility() {
-  els.resetCrop.hidden = !state.hasManualCrop;
+  let show = false;
+  if (state.hasManualCrop && state.crop && state.image) {
+    const eps = 1;
+    const fullCrop =
+      Math.abs(state.crop.x) < eps &&
+      Math.abs(state.crop.y) < eps &&
+      Math.abs(state.crop.w - state.image.width) < eps &&
+      Math.abs(state.crop.h - state.image.height) < eps;
+    show = !fullCrop;
+  }
+  els.resetCropRow.classList.toggle("is-visible", show);
 }
 
 function snapFocalToPreset(focal) {
@@ -477,6 +516,7 @@ function setFocalFromPreset(value) {
 
 async function applyImage(image) {
   state.image = image;
+  resetSafeZoneColor();
   els.sourceInfo.hidden = false;
   els.metaDims.textContent = `${image.width.toLocaleString("en-US")} × ${image.height.toLocaleString("en-US")}`;
   els.metaSize.textContent = formatBytes(image.byteLength);
@@ -507,17 +547,21 @@ async function applyImage(image) {
   }
 
   state.outputAspect = state.outputW / state.outputH;
+  state.maxResolution = 2000;
+  updateMaxResolutionDisplay();
+  clampOutputToCap();
+  if (!state.hasManualCrop) {
+    state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
+  }
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
   updateFocalAttributeHint();
   els.download.disabled = false;
   els.clearImageRow.hidden = false;
-  els.canvasClear.hidden = false;
   els.infoBtn.hidden = false;
   els.compareBtn.hidden = false;
   els.layout.classList.add("has-image");
   updateRemoveCropVisibility();
-  updateResizeLink();
   state.estimatedBytes = null;
   rerender();
   scheduleEstimate();
@@ -539,10 +583,11 @@ function handleClearImage() {
   els.download.disabled = true;
   deactivateCropUi();
   els.clearImageRow.hidden = true;
-  els.canvasClear.hidden = true;
   els.infoBtn.hidden = true;
   els.compareBtn.hidden = true;
   state.hasManualCrop = false;
+  state.maxResolution = 2000;
+  updateMaxResolutionDisplay();
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
   state.compressedBitmap = null;
   state.compareMode = false;
@@ -613,23 +658,7 @@ function wireSettingsInputs() {
     syncPresetUI();
     rerender();
   });
-  els.safeZoneColor.addEventListener("input", () => {
-    state.settings.safeZoneColor = els.safeZoneColor.value;
-    persistSettings();
-    updateResetSafeZoneColorVisibility();
-    applySafeZoneColorVar();
-    rerender();
-    renderModal();
-  });
-  els.resetSafeZoneColor.addEventListener("click", () => {
-    state.settings.safeZoneColor = "#00FF00";
-    els.safeZoneColor.value = "#00FF00";
-    persistSettings();
-    updateResetSafeZoneColorVisibility();
-    applySafeZoneColorVar();
-    rerender();
-    renderModal();
-  });
+  els.safeZoneColor.addEventListener("click", cycleSafeZoneColor);
 }
 
 function wireInfoModal() {
@@ -722,7 +751,6 @@ function wireImageInput() {
   });
 
   els.clearImage.addEventListener("click", handleClearImage);
-  els.canvasClear.addEventListener("click", handleClearImage);
 
   document.addEventListener("paste", (e) => {
     const target = e.target;
@@ -790,41 +818,34 @@ function wireFocalAndCrop() {
     state.outputH = Math.max(1, Math.round(state.outputW / state.outputAspect));
     els.outputH.value = state.outputH;
     updateOutputDimensionLabels();
-    updateUseIntrinsicVisibility();
-    if (state.image) recomputeCropFromFocal();
+      if (state.image) recomputeCropFromFocal();
     rerender();
     persistImageState();
     scheduleEstimate();
-    updateResizeLink();
   });
   els.outputH.addEventListener("input", () => {
     state.outputH = clampInt(els.outputH.value, 100, 6000, state.outputH);
     state.outputW = Math.max(1, Math.round(state.outputH * state.outputAspect));
     els.outputW.value = state.outputW;
     updateOutputDimensionLabels();
-    updateUseIntrinsicVisibility();
-    if (state.image) recomputeCropFromFocal();
+      if (state.image) recomputeCropFromFocal();
     rerender();
     persistImageState();
     scheduleEstimate();
-    updateResizeLink();
   });
 
-  els.resizeTo2000.addEventListener("click", resizeOutputToMax2000);
-
-  els.useIntrinsic.addEventListener("click", () => {
+  els.maxResolution.addEventListener("input", () => {
+    const idx = clampInt(els.maxResolution.value, 0, MAX_RES_PRESETS.length - 1, 0);
+    state.maxResolution = MAX_RES_PRESETS[idx].value;
+    updateMaxResolutionDisplay();
     if (!state.image) return;
-    const intrinsic = outputIntrinsicDimensions();
-    if (!intrinsic) return;
-    state.outputW = intrinsic.w;
-    state.outputH = intrinsic.h;
-    state.outputAspect = state.outputW / state.outputH;
-    syncOutputAndQualityToInputs();
-    if (!state.hasManualCrop) recomputeCropFromFocal();
-    rerender();
-    persistImageState();
-    scheduleEstimate();
-    updateResizeLink();
+    if (clampOutputToCap()) {
+      syncOutputAndQualityToInputs();
+      if (!state.hasManualCrop) recomputeCropFromFocal();
+      rerender();
+      persistImageState();
+      scheduleEstimate();
+    }
   });
 
   els.resetCrop.addEventListener("click", () => {
@@ -834,9 +855,9 @@ function wireFocalAndCrop() {
     state.outputW = state.crop.w;
     state.outputH = state.crop.h;
     state.outputAspect = state.outputW / state.outputH;
+    clampOutputToCap();
     syncOutputAndQualityToInputs();
     updateRemoveCropVisibility();
-    updateResizeLink();
     rerender();
     syncCropUiFromState();
     persistImageState();
@@ -875,12 +896,12 @@ function applyDrag(drag, dx, dy, aspect) {
 
 function wireCompression() {
   els.quality.addEventListener("input", () => {
-    state.quality = snapQualityToPreset(clampInt(els.quality.value, 1, 100, 55));
+    const idx = clampInt(els.quality.value, 0, QUALITY_PRESETS.length - 1, 1);
+    state.quality = QUALITY_PRESETS[idx].value;
     updateQualityDisplay();
     updateCompressionWarning();
     scheduleEstimate();
     persistImageState();
-    els.quality.blur();
   });
 
   const setCompareHoverOverlay = (active) => {
@@ -986,6 +1007,8 @@ async function runEstimate() {
     updateSizeEstimate();
   } catch (err) {
     els.outputMetaSize.textContent = `Estimate failed: ${err.message || err}`;
+    els.outputMetaSize.classList.remove("is-estimating");
+    els.outputMetaSize.classList.add("is-error");
   } finally {
     estimateInFlight = false;
     if (gen !== estimateGeneration) {
@@ -1104,10 +1127,13 @@ function updateCropSizeWarning(crop) {
   const outputH = cropModalOutputHeight(crop.w, crop.h);
   const max = Math.max(outputW, outputH);
 
-  if (max < MIN_RECOMMENDED_LONGEST_SIDE || outputH < MIN_RECOMMENDED_HEIGHT) {
+  const suggestedMinW = Math.round((1920 - (state.settings.formWidth || 0)) / 100) * 100;
+  const suggestedMinH = 1100;
+
+  if (outputW < suggestedMinW || outputH < suggestedMinH) {
     els.cropSizeWarning.hidden = false;
-    els.cropSizeWarning.textContent = `Output is small (${outputW}×${outputH}). Recommended longest side: 1500–2000px; minimum height: 750px.`;
-  } else if (max > MAX_RECOMMENDED_LONGEST_SIDE) {
+    els.cropSizeWarning.textContent = `Output is small (${outputW}×${outputH}). Suggested minimum: ${suggestedMinW}×${suggestedMinH}px.`;
+  } else if (max > detailCap()) {
     els.cropSizeWarning.hidden = false;
     els.cropSizeWarning.textContent = `Output is large (${outputW}×${outputH}). Recommended longest side: 1500–2000px.`;
   } else {
@@ -1212,13 +1238,8 @@ function commitModalCrop() {
   state.outputW = state.crop.w;
   state.outputH = state.crop.h;
   state.outputAspect = state.outputW / state.outputH;
-  if (Math.max(state.outputW, state.outputH) > 2000) {
-    const ratio = 2000 / Math.max(state.outputW, state.outputH);
-    state.outputW = Math.max(1, Math.round(state.outputW * ratio));
-    state.outputH = Math.max(1, Math.round(state.outputH * ratio));
-    state.outputAspect = state.outputW / state.outputH;
-  }
   state.hasManualCrop = !modalState.removeCrop;
+  clampOutputToCap();
   if (modalState.focal) {
     state.focal = { ...modalState.focal };
   }
@@ -1226,7 +1247,6 @@ function commitModalCrop() {
   highlightFocalPreset();
   updateFocalAttributeHint();
   updateRemoveCropVisibility();
-  updateResizeLink();
   rerender();
   persistImageState();
   scheduleEstimate();
