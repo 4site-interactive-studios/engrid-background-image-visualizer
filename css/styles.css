@@ -371,6 +371,25 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   background: conic-gradient(from 0deg, #FF0000, #FF7F00, #FFFF00, #00FF00, #FF0000);
 }
 .safe-zone-color-trigger.is-auto:hover { filter: none; }
+.safe-zone-color-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+.safe-zone-color-trigger.show-tooltip::after { opacity: 1; }
 .form-safezone-fieldset.is-preset .form-position-row,
 .form-safezone-fieldset.is-preset .form-width-row,
 .form-safezone-fieldset.is-preset .safe-zone-row {
@@ -883,6 +902,13 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   border-radius: 2px;
 }
 .swatch-zone { background: var(--zone); border-color: var(--zone-stroke); }
+.swatch-focal {
+  background:
+    radial-gradient(circle at center, rgba(0, 255, 0, 0.55) 0 35%, transparent 36%),
+    repeating-conic-gradient(rgba(0, 255, 0, 0.85) 0deg 12deg, transparent 12deg 24deg);
+  border-radius: 50%;
+  border-color: transparent;
+}
 .swatch-warm {
   background: linear-gradient(
     90deg,

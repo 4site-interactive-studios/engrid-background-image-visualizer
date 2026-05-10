@@ -60,17 +60,65 @@ export function render({ canvas, image, settings, focal, crop, showSafeZone = tr
   );
 
   if (showSafeZone) {
+    const focalX = focal ? focal.x : 0.5;
     drawActiveSafeZone(
       ctx,
       canvas,
       settings.safeZoneWidth,
-      focal ? focal.x : 0.5,
+      focalX,
       settings.safeZoneColor || "#00FF00",
       undefined,
       settings.safeZoneFillAlpha,
       settings.safeZoneWarmColor
     );
+    drawFocalSectionCircle(
+      ctx,
+      canvas,
+      focal,
+      settings.safeZoneColor || "#00FF00",
+      settings.safeZoneFillAlpha != null ? settings.safeZoneFillAlpha : SAFE_ZONE_FILL_ALPHA,
+      safeZonePosition(canvas.width, settings.safeZoneWidth, focalX)
+    );
   }
+}
+
+export function safeZonePosition(canvasWidth, columnWidthPx, focalX) {
+  const colW = Math.round(Math.min(columnWidthPx, canvasWidth));
+  if (colW <= 0) return null;
+  let x;
+  if (focalX <= 0.25) x = 0;
+  else if (focalX >= 0.75) x = canvasWidth - colW;
+  else x = Math.round((canvasWidth - colW) / 2);
+  return { x, w: colW };
+}
+
+export function drawFocalSectionCircle(ctx, canvas, focal, color, fillAlpha, safeZoneRect) {
+  if (!focal || !safeZoneRect) return;
+
+  const sectionCenter = (coord, total) => {
+    if (coord < 1 / 3) return total / 6;
+    if (coord < 2 / 3) return total / 2;
+    return (total * 5) / 6;
+  };
+
+  const cx = safeZoneRect.x + safeZoneRect.w / 2;
+  const cy = sectionCenter(focal.y, canvas.height);
+  const radius = safeZoneRect.w / 4;
+  if (radius <= 0) return;
+
+  ctx.save();
+  ctx.fillStyle = rgba(color, fillAlpha);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = rgba(color, 0.85);
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 const SAFE_ZONE_FILL_ALPHA = 0.3;

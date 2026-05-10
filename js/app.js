@@ -7,7 +7,7 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js?v=31";
-import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js?v=30";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=36";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
@@ -179,7 +179,7 @@ function applySafeZoneColorVar() {
   );
   if (els.safeZoneColor) {
     els.safeZoneColor.classList.toggle("is-auto", !!state.settings.safeZoneAuto);
-    els.safeZoneColor.title = safeZoneColorTooltip();
+    els.safeZoneColor.dataset.tooltip = safeZoneColorTooltip();
   }
 }
 
@@ -197,6 +197,7 @@ function applyPreset(id) {
   applyLayoutFromSettings();
   syncPresetUI();
   rerender();
+  if (modalState.active) renderModal();
 }
 
 function markPresetCustomIfChanged() {
@@ -308,6 +309,7 @@ function setPreviewLoading(active) {
 
 function persistSettings() {
   saveSettings(state.settings);
+  commitHistory();
 }
 
 function persistImageState() {
@@ -321,6 +323,127 @@ function persistImageState() {
     quality: state.quality,
     hasManualCrop: state.hasManualCrop,
   });
+  commitHistory();
+}
+
+const HISTORY_MAX = 50;
+const HISTORY_MERGE_MS = 400;
+const history = {
+  undo: [],
+  redo: [],
+  baseline: null,
+  baselineTime: 0,
+  applying: false,
+};
+
+function snapshotForHistory() {
+  if (!state.image) return null;
+  return {
+    imageHash: state.image.hash,
+    focal: { ...state.focal },
+    crop: state.crop ? { ...state.crop } : null,
+    outputW: state.outputW,
+    outputH: state.outputH,
+    outputAspect: state.outputAspect,
+    quality: state.quality,
+    maxResolution: state.maxResolution,
+    hasManualCrop: state.hasManualCrop,
+    settings: { ...state.settings },
+  };
+}
+
+function snapshotsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.imageHash !== b.imageHash) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function commitHistory() {
+  if (history.applying) return;
+  const snap = snapshotForHistory();
+  if (!snap) return;
+  if (!history.baseline) {
+    history.baseline = snap;
+    history.baselineTime = Date.now();
+    return;
+  }
+  if (snapshotsEqual(snap, history.baseline)) return;
+  const now = Date.now();
+  if (now - history.baselineTime < HISTORY_MERGE_MS && history.undo.length > 0) {
+    history.baseline = snap;
+    history.baselineTime = now;
+    return;
+  }
+  history.undo.push(history.baseline);
+  if (history.undo.length > HISTORY_MAX) history.undo.shift();
+  history.redo.length = 0;
+  history.baseline = snap;
+  history.baselineTime = now;
+}
+
+function resetHistory() {
+  history.undo.length = 0;
+  history.redo.length = 0;
+  history.baseline = snapshotForHistory();
+  history.baselineTime = Date.now();
+}
+
+function applyHistorySnapshot(snap) {
+  if (!snap || !state.image || snap.imageHash !== state.image.hash) return;
+  history.applying = true;
+  state.focal = { ...snap.focal };
+  state.crop = snap.crop ? { ...snap.crop } : null;
+  state.outputW = snap.outputW;
+  state.outputH = snap.outputH;
+  state.outputAspect = snap.outputAspect;
+  state.quality = snap.quality;
+  state.maxResolution = snap.maxResolution;
+  state.hasManualCrop = snap.hasManualCrop;
+  state.settings = { ...snap.settings };
+  modalState.crop = state.crop ? { ...state.crop } : null;
+  modalState.focal = { ...state.focal };
+  syncSettingsToInputs();
+  applyLayoutFromSettings();
+  applySafeZoneColorVar();
+  syncPresetUI();
+  syncOutputAndQualityToInputs();
+  updateRemoveCropVisibility();
+  highlightFocalPreset();
+  updateFocalAttributeHint();
+  updateAutoSafeZoneColor();
+  rerender();
+  if (modalState.active) renderModal();
+  saveSettings(state.settings);
+  saveImageState(state.image.hash, {
+    filename: state.image.filename,
+    focalPoint: state.focal,
+    cropFrame: state.crop,
+    outputW: state.outputW,
+    outputH: state.outputH,
+    quality: state.quality,
+    hasManualCrop: state.hasManualCrop,
+  });
+  scheduleEstimate();
+  history.baseline = snapshotForHistory();
+  history.baselineTime = Date.now();
+  history.applying = false;
+}
+
+function undoHistory() {
+  if (history.undo.length === 0) return;
+  const current = snapshotForHistory();
+  const prev = history.undo.pop();
+  if (current) history.redo.push(current);
+  applyHistorySnapshot(prev);
+}
+
+function redoHistory() {
+  if (history.redo.length === 0) return;
+  const current = snapshotForHistory();
+  const next = history.redo.pop();
+  if (current) history.undo.push(current);
+  applyHistorySnapshot(next);
 }
 
 function syncSettingsToInputs() {
@@ -396,7 +519,7 @@ function effectiveCropSafeZoneSettings() {
   return {
     ...state.settings,
     safeZoneWidth: state.settings.formWidth,
-    safeZoneColor: "#FF0000",
+    safeZoneColor: "#000000",
     safeZoneWarmColor: state.settings.safeZoneColor || "#00FF00",
   };
 }
@@ -696,6 +819,7 @@ async function applyImage(image) {
   rerender();
   scheduleEstimate();
   activateCropUi();
+  resetHistory();
 }
 
 function handleClearImage() {
@@ -732,6 +856,7 @@ function handleClearImage() {
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
   rerender();
+  resetHistory();
 }
 
 async function handleFile(file) {
@@ -782,6 +907,7 @@ function wireSettingsInputs() {
     syncPresetUI();
     if (state.image && !state.hasManualCrop) recomputeCropFromFocal();
     rerender();
+    if (modalState.active) renderModal();
   });
   els.safeZoneWidth.addEventListener("input", () => {
     state.settings.safeZoneWidth = clampInt(els.safeZoneWidth.value, 50, 2000, 350);
@@ -792,6 +918,12 @@ function wireSettingsInputs() {
     if (modalState.active) renderModal();
   });
   els.safeZoneColor.addEventListener("click", cycleSafeZoneColor);
+  els.safeZoneColor.addEventListener("mouseenter", () => {
+    els.safeZoneColor.classList.add("show-tooltip");
+  });
+  els.safeZoneColor.addEventListener("mouseleave", () => {
+    els.safeZoneColor.classList.remove("show-tooltip");
+  });
 }
 
 function wireInfoModal() {
@@ -857,8 +989,30 @@ function attemptUrlLoad(url) {
   handleUrl(url);
 }
 
+async function generateRainbowTestImage() {
+  const c = document.createElement("canvas");
+  c.width = 4000;
+  c.height = 3000;
+  const ctx = c.getContext("2d");
+  const colors = ["#ff5577", "#ffaa55", "#ffee55", "#88ff77", "#55aaff", "#aa77ff"];
+  for (let i = 0; i < colors.length; i++) {
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(0, i * 500, 4000, 500);
+  }
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  return new File([blob], "rainbow-test.jpg", { type: "image/jpeg" });
+}
+
 function wireImageInput() {
-  els.uploadBtn.addEventListener("click", () => els.fileInput.click());
+  els.uploadBtn.addEventListener("click", async (e) => {
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      const file = await generateRainbowTestImage();
+      handleFile(file);
+      return;
+    }
+    els.fileInput.click();
+  });
 
   els.fileInput.addEventListener("change", () => {
     const file = els.fileInput.files?.[0];
@@ -932,6 +1086,7 @@ function wireFocalAndCrop() {
     setFocalFromPreset(els.focalPreset.value);
     if (!state.hasManualCrop) recomputeCropFromFocal();
     rerender();
+    if (modalState.active) renderModal();
     persistImageState();
     scheduleEstimate();
     updateFocalAttributeHint();
@@ -997,6 +1152,14 @@ function wireFocalAndCrop() {
     syncCropUiFromState();
     persistImageState();
     scheduleEstimate();
+  });
+
+  els.canvas.addEventListener("keydown", (e) => {
+    if (!state.image) return;
+    const delta = arrowKeyDelta(e);
+    if (!delta) return;
+    e.preventDefault();
+    nudgeCropByPreviewPx(delta.dx, delta.dy);
   });
 }
 
@@ -1396,7 +1559,10 @@ function fixCropToMeetMin() {
 
 function drawModalCropSafeZone(ctx, rect, scale) {
   const safeZoneSettings = effectiveCropSafeZoneSettings();
-  const outputW = cropModalOutputWidth(rect.w / scale, rect.h / scale);
+  const isCenter = isCenterFormPosition();
+  const mainCanvasW = els.canvas.width;
+  const cropSourceW = scale > 0 ? rect.w / scale : 0;
+  const outputW = cropSourceW > 0 ? cropModalOutputWidth(cropSourceW, rect.h / scale) : 0;
   const safeZoneWidth = outputW > 0
     ? safeZoneSettings.safeZoneWidth * (rect.w / outputW)
     : 0;
@@ -1409,16 +1575,32 @@ function drawModalCropSafeZone(ctx, rect, scale) {
   ctx.rect(rect.x, rect.y, rect.w, rect.h);
   ctx.clip();
   ctx.translate(rect.x, rect.y);
+  const focalX = modalState.focal ? modalState.focal.x : effectiveFocal().x;
   drawActiveSafeZone(
     ctx,
     { width: rect.w, height: rect.h },
     safeZoneWidth,
-    modalState.focal ? modalState.focal.x : effectiveFocal().x,
+    focalX,
     safeZoneSettings.safeZoneColor || "#00FF00",
     warmZoneBandWidth,
     safeZoneSettings.safeZoneFillAlpha,
     safeZoneSettings.safeZoneWarmColor
   );
+  if (isCenter) {
+    const colW = Math.round(Math.min(safeZoneWidth, rect.w));
+    const x = Math.round((rect.w - colW) / 2);
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(x, 0, colW, rect.h);
+  } else {
+    drawFocalSectionCircle(
+      ctx,
+      { width: rect.w, height: rect.h },
+      modalState.focal || effectiveFocal(),
+      safeZoneSettings.safeZoneColor || "#00FF00",
+      safeZoneSettings.safeZoneFillAlpha != null ? safeZoneSettings.safeZoneFillAlpha : 0.3,
+      safeZonePosition(rect.w, safeZoneWidth, focalX)
+    );
+  }
   ctx.restore();
 }
 
@@ -1507,8 +1689,80 @@ function commitModalCrop() {
   scheduleEstimate();
 }
 
+function nudgeCropByPreviewPx(dx, dy) {
+  if (!state.image || !state.crop) return false;
+  const mainW = els.canvas.width;
+  const mainH = els.canvas.height;
+  if (mainW <= 0 || mainH <= 0) return false;
+  const sourceDx = dx * (state.crop.w / mainW);
+  const sourceDy = dy * (state.crop.h / mainH);
+  let nx = state.crop.x + sourceDx;
+  let ny = state.crop.y + sourceDy;
+  let nw = state.crop.w;
+  let nh = state.crop.h;
+  const MIN_DIM = 20;
+
+  if (nx < 0) {
+    const excess = -nx;
+    nx = 0;
+    nw = Math.max(MIN_DIM, nw - excess);
+  } else if (nx + nw > state.image.width) {
+    const excess = (nx + nw) - state.image.width;
+    nw = Math.max(MIN_DIM, nw - excess);
+    nx = state.image.width - nw;
+  }
+  if (ny < 0) {
+    const excess = -ny;
+    ny = 0;
+    nh = Math.max(MIN_DIM, nh - excess);
+  } else if (ny + nh > state.image.height) {
+    const excess = (ny + nh) - state.image.height;
+    nh = Math.max(MIN_DIM, nh - excess);
+    ny = state.image.height - nh;
+  }
+
+  if (nx === state.crop.x && ny === state.crop.y && nw === state.crop.w && nh === state.crop.h) return false;
+  const cropResized = nw !== state.crop.w || nh !== state.crop.h;
+  state.crop = { x: nx, y: ny, w: nw, h: nh };
+  modalState.crop = { ...state.crop };
+  state.hasManualCrop = true;
+  if (cropResized) {
+    state.outputW = state.crop.w;
+    state.outputH = state.crop.h;
+    state.outputAspect = state.outputW / state.outputH;
+    clampOutputToCap();
+  }
+  syncOutputAndQualityToInputs();
+  updateRemoveCropVisibility();
+  updateAutoSafeZoneColor();
+  rerender();
+  if (modalState.active) renderModal();
+  persistImageState();
+  scheduleEstimate();
+  return true;
+}
+
+function arrowKeyDelta(e) {
+  let dx = 0, dy = 0;
+  if (e.key === "ArrowLeft") dx = -1;
+  else if (e.key === "ArrowRight") dx = 1;
+  else if (e.key === "ArrowUp") dy = -1;
+  else if (e.key === "ArrowDown") dy = 1;
+  else return null;
+  const mult = e.shiftKey ? 10 : 1;
+  return { dx: dx * mult, dy: dy * mult };
+}
+
 function wireCropModal() {
   els.cropFixBtn.addEventListener("click", fixCropToMeetMin);
+
+  els.modalCanvas.addEventListener("keydown", (e) => {
+    if (!modalState.active) return;
+    const delta = arrowKeyDelta(e);
+    if (!delta) return;
+    e.preventDefault();
+    nudgeCropByPreviewPx(delta.dx, delta.dy);
+  });
 
   els.modalCanvas.addEventListener("mousedown", (e) => {
     if (!modalState.active || !state.image) return;
@@ -1584,6 +1838,24 @@ function wireCropModal() {
   });
 }
 
+function wireUndoRedo() {
+  document.addEventListener("keydown", (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const target = e.target;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    if (!state.image) return;
+    const key = e.key.toLowerCase();
+    if (key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      undoHistory();
+    } else if ((key === "y") || (key === "z" && e.shiftKey)) {
+      e.preventDefault();
+      redoHistory();
+    }
+  });
+}
+
 function init() {
   syncSettingsToInputs();
   applyLayoutFromSettings();
@@ -1598,6 +1870,7 @@ function init() {
   wireCropModal();
   wireInfoModal();
   wireVideoModal();
+  wireUndoRedo();
 
   let resizeRaf = 0;
   const ro = new ResizeObserver(() => {

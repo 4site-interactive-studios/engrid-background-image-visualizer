@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=30" />
+  <link rel="stylesheet" href="css/styles.css?v=32" />
 </head>
 <body>
   <main class="layout">
@@ -17,7 +17,7 @@
       <fieldset class="form-safezone-fieldset">
         <legend>Settings</legend>
         <label>
-          <span>Preset<span class="safe-zone-controls"><button type="button" class="safe-zone-color-trigger" id="safe-zone-color" aria-label="Cycle safe zone color"></button></span></span>
+          <span>Preset</span>
           <select id="preset">
             <option value="ngs-left">NGS - Left</option>
             <option value="nwf-left">NWF - Left</option>
@@ -45,7 +45,7 @@
           <input type="number" id="safe-zone-width" min="50" max="2000" value="350" />
         </label>
         <label class="focal-point-setting">
-          <span>Image focal point</span>
+          <span>Image focal point<span class="safe-zone-controls"><button type="button" class="safe-zone-color-trigger" id="safe-zone-color" aria-label="Cycle safe zone color"></button></span></span>
           <select id="focal-preset">
             <option value="0,0">Left Top</option>
             <option value="0,0.5">Left Center</option>
@@ -60,7 +60,7 @@
         </label>
         <div id="crop-inline" class="crop-inline" hidden aria-hidden="true">
           <div class="crop-inline-canvas-wrap">
-            <canvas id="modal-canvas"></canvas>
+            <canvas id="modal-canvas" tabindex="0"></canvas>
           </div>
           <div class="crop-inline-controls">
             <p id="crop-size-warning" class="crop-size-warning" hidden><span id="crop-size-warning-text"></span> <button type="button" id="crop-fix-btn" class="crop-fix-btn" hidden>Fix it</button></p>
@@ -99,7 +99,7 @@
 
     <section class="preview" aria-label="Preview">
       <div class="canvas-wrap" id="canvas-wrap">
-        <canvas id="preview-canvas"></canvas>
+        <canvas id="preview-canvas" tabindex="0"></canvas>
         <div class="preview-spinner" id="preview-spinner" hidden aria-hidden="true">
           <span class="spinner" aria-label="Updating preview"></span>
         </div>
@@ -138,25 +138,36 @@
             <button type="button" class="icon-btn" data-close-info aria-label="Close">×</button>
           </header>
           <div class="info-body">
-            <p>The canvas shows your image (or its current crop). The sidebar represents the form column on the page — its width matches <em>Form width</em> and its position matches <em>Form position</em>.</p>
+            <p>The canvas shows your image (or its current crop) with overlays that preview how it will hold up against your form layout settings.</p>
             <ul class="info-list">
               <li>
                 <span class="legend-swatch swatch-zone"></span>
                 <div>
                   <strong>Image safe zone</strong>
-                  <p>The vertical column corresponding to your focal point. If your focal point lands here, the image will hold up across viewports.</p>
+                  <p>A vertical column at the position of your focal point, sized to match <em>Image safe zone</em>. If important content lands here it will hold up across viewports.</p>
                 </div>
               </li>
               <li>
                 <span class="legend-swatch swatch-warm"></span>
                 <div>
                   <strong>Image warm zone</strong>
-                  <p>Five 30px bands on either side of the safe zone, stepping down by 20% opacity per band. It is clipped at the image edge for left and right focal points.</p>
+                  <p>Five 30px bands on either side of the safe zone, stepping down by 20% opacity per band. Clipped at the image edge for left and right focal points.</p>
                 </div>
               </li>
               <li>
-                <strong>Form area</strong>
-                <p>The sidebar itself. Its width equals <em>Form width</em>, anchored per <em>Form position</em>. Anything behind the sidebar would be hidden by the form on the real page.</p>
+                <span class="legend-swatch swatch-focal"></span>
+                <div>
+                  <strong>Focal section indicator</strong>
+                  <p>A dotted, filled circle horizontally centered on the safe zone column at the row matching your focal point. Its diameter is 50% of the safe zone width.</p>
+                </div>
+              </li>
+              <li>
+                <strong>Center form position</strong>
+                <p>When <em>Form position</em> is set to Center, the safe zone column represents the form itself: shown in red on the main preview, and as solid black on the crop preview (since the form covers it).</p>
+              </li>
+              <li>
+                <strong>Keyboard nudging</strong>
+                <p>Click the preview to focus it, then use the arrow keys to nudge the crop one preview-pixel at a time. Hold Shift to nudge by 10 pixels.</p>
               </li>
             </ul>
           </div>
@@ -178,6 +189,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=62"></script>
+  <script type="module" src="js/app.js?v=83"></script>
 </body>
 </html>
