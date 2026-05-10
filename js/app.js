@@ -6,8 +6,8 @@ import {
   clampCrop,
   cropToImageData,
   formatBytes,
-} from "./imagework.js?v=31";
-import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=39";
+} from "./imagework.js?v=32";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=40";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
@@ -796,6 +796,12 @@ function setFocalFromPreset(value) {
 
 async function applyImage(image) {
   state.image = image;
+  try {
+    const warmup = document.createElement("canvas");
+    warmup.width = 8;
+    warmup.height = 8;
+    warmup.getContext("2d").drawImage(image.bitmap, 0, 0, 8, 8);
+  } catch {}
   resetSafeZoneColor();
   els.sourceInfo.hidden = false;
   els.metaDims.textContent = `${image.width.toLocaleString("en-US")} × ${image.height.toLocaleString("en-US")}`;
@@ -1461,6 +1467,8 @@ function renderModal() {
   const s = modalState.scale;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(state.image.bitmap, 0, 0, canvas.width, canvas.height);
 
   if (c) {

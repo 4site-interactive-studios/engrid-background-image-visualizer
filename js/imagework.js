@@ -24,14 +24,21 @@ export async function decodeBytes(bytes, mimeType, filename) {
   }
 }
 
-function loadImageElement(src, opts = {}) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    if (opts.crossOrigin) img.crossOrigin = opts.crossOrigin;
-    img.onload = () => resolve(img);
+async function loadImageElement(src, opts = {}) {
+  const img = new Image();
+  if (opts.crossOrigin) img.crossOrigin = opts.crossOrigin;
+  img.src = src;
+  if (img.decode) {
+    try {
+      await img.decode();
+      return img;
+    } catch {}
+  }
+  await new Promise((resolve, reject) => {
+    img.onload = () => resolve();
     img.onerror = () => reject(new Error("Failed to decode image"));
-    img.src = src;
   });
+  return img;
 }
 
 export async function loadFromFile(file) {

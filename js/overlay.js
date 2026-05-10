@@ -33,6 +33,8 @@ export function fitCanvasToContainer(canvas, container) {
 export function render({ canvas, image, settings, focal, crop, showSafeZone = true }) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   const displayCrop = crop || { x: 0, y: 0, w: image.width, h: image.height };
   const canvasAspect = canvas.width / canvas.height;
