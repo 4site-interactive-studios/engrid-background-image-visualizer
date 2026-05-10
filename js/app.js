@@ -1587,8 +1587,9 @@ function fixCropToMeetMin() {
   const targetH = Math.min(state.image.height, Math.max(modalState.crop.h, minH));
   const dw = targetW - modalState.crop.w;
   const dh = targetH - modalState.crop.h;
-  let nx = modalState.crop.x - dw / 2;
-  let ny = modalState.crop.y - dh / 2;
+  const ef = effectiveFocal();
+  let nx = modalState.crop.x - ef.x * dw;
+  let ny = modalState.crop.y - ef.y * dh;
   if (nx < 0) nx = 0;
   if (ny < 0) ny = 0;
   if (nx + targetW > state.image.width) nx = state.image.width - targetW;
