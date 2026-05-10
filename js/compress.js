@@ -1,22 +1,5 @@
-let encodePromise = null;
-
-function loadEncoder() {
-  if (!encodePromise) {
-    encodePromise = import("https://esm.sh/@jsquash/jpeg@1?bundle").then(
-      (mod) => mod.encode
-    );
-  }
-  return encodePromise;
-}
-
-export async function encodeJpeg(imageData, quality) {
-  const encode = await loadEncoder();
-  const buffer = await encode(imageData, { quality });
-  return new Uint8Array(buffer);
-}
-
-export function triggerDownload(bytes, filename) {
-  const blob = new Blob([bytes], { type: "image/jpeg" });
+export function triggerDownload(bytes, filename, mimeType) {
+  const blob = new Blob([bytes], { type: mimeType || "image/jpeg" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -27,8 +10,16 @@ export function triggerDownload(bytes, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function suggestFilename(originalName) {
+const MIME_EXT = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+export function suggestFilename(originalName, mimeType) {
   const dot = originalName.lastIndexOf(".");
   const stem = dot > 0 ? originalName.slice(0, dot) : originalName;
-  return `${stem}-bg.jpg`;
+  const ext = MIME_EXT[mimeType] || "jpg";
+  return `${stem}-bg.${ext}`;
 }

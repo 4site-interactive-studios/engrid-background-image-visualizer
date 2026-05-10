@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=30";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=32";
 import {
   loadFromFile,
   loadFromUrl,
@@ -6,21 +6,21 @@ import {
   clampCrop,
   cropToImageData,
   formatBytes,
-} from "./imagework.js?v=30";
+} from "./imagework.js?v=31";
 import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js?v=30";
-import { triggerDownload, suggestFilename } from "./compress.js?v=30";
+import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
 
 const PRESETS = [
-  { id: "ngs-left", name: "NGS - Left Layout", layout: "left", formWidth: 550, safeZoneWidth: 350 },
-  { id: "nwf-left", name: "NWF - Left Layout", layout: "left", formWidth: 800, safeZoneWidth: 200 },
-  { id: "oceana-left", name: "Oceana - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 350 },
-  { id: "ran-left", name: "RAN - Left Layout", layout: "left", formWidth: 680, safeZoneWidth: 300 },
-  { id: "shatterproof-left", name: "Shatterproof - Left Layout", layout: "left", formWidth: 640, safeZoneWidth: 350 },
-  { id: "wwf-center", name: "WWF - Center Layout", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
+  { id: "ngs-left", name: "NGS - Left", layout: "left", formWidth: 550, safeZoneWidth: 350 },
+  { id: "nwf-left", name: "NWF - Left", layout: "left", formWidth: 800, safeZoneWidth: 200 },
+  { id: "oceana-left", name: "Oceana - Left", layout: "left", formWidth: 680, safeZoneWidth: 350 },
+  { id: "ran-left", name: "RAN - Left", layout: "left", formWidth: 680, safeZoneWidth: 300 },
+  { id: "shatterproof-left", name: "Shatterproof - Left", layout: "left", formWidth: 640, safeZoneWidth: 350 },
+  { id: "wwf-center", name: "WWF - Center", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
 
 function matchingPresetId() {
@@ -48,13 +48,113 @@ function syncPresetUI() {
 }
 
 const SAFE_ZONE_COLORS = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082"];
+const SAFE_ZONE_COLOR_NAMES = {
+  "#FF0000": "Red",
+  "#FF7F00": "Orange",
+  "#FFFF00": "Yellow",
+  "#00FF00": "Green",
+  "#0000FF": "Blue",
+  "#4B0082": "Indigo",
+};
+
+function safeZoneColorTooltip() {
+  if (state.settings.safeZoneAuto) return "Auto - Select for maximum contrast";
+  const hex = (state.settings.safeZoneColor || "").toUpperCase();
+  return SAFE_ZONE_COLOR_NAMES[hex] || "";
+}
 const DEFAULT_SAFE_ZONE_COLOR = "#00FF00";
 
+
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.substr(0, 2), 16),
+    g: parseInt(h.substr(2, 2), 16),
+    b: parseInt(h.substr(4, 2), 16),
+  };
+}
+
+function rgbDistance(a, b) {
+  const dr = a.r - b.r;
+  const dg = a.g - b.g;
+  const db = a.b - b.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+function computeAverageColor() {
+  if (!state.image) return null;
+  const sampleSize = 8;
+  const tmp = document.createElement("canvas");
+  tmp.width = sampleSize;
+  tmp.height = sampleSize;
+  const ctx = tmp.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  let sx = 0, sy = 0, sw = state.image.width, sh = state.image.height;
+  if (state.hasManualCrop && state.crop) {
+    sx = state.crop.x;
+    sy = state.crop.y;
+    sw = state.crop.w;
+    sh = state.crop.h;
+  }
+  try {
+    ctx.drawImage(state.image.bitmap, sx, sy, sw, sh, 0, 0, sampleSize, sampleSize);
+    const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
+    let r = 0, g = 0, b = 0;
+    const n = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i];
+      g += data[i + 1];
+      b += data[i + 2];
+    }
+    return { r: r / n, g: g / n, b: b / n };
+  } catch {
+    return null;
+  }
+}
+
+function pickAutoColor(avg) {
+  let best = SAFE_ZONE_COLORS[0];
+  let bestDist = -1;
+  for (const c of SAFE_ZONE_COLORS) {
+    const d = rgbDistance(avg, hexToRgb(c));
+    if (d > bestDist) {
+      bestDist = d;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function updateAutoSafeZoneColor() {
+  if (!state.settings.safeZoneAuto || !state.image) return;
+  const avg = computeAverageColor();
+  if (!avg) return;
+  const newColor = pickAutoColor(avg);
+  if (newColor === state.settings.safeZoneColor) return;
+  state.settings.safeZoneColor = newColor;
+  persistSettings();
+  applySafeZoneColorVar();
+  rerender();
+  renderModal();
+}
+
 function cycleSafeZoneColor() {
-  const current = (state.settings.safeZoneColor || DEFAULT_SAFE_ZONE_COLOR).toUpperCase();
-  const i = SAFE_ZONE_COLORS.indexOf(current);
-  const next = SAFE_ZONE_COLORS[(i + 1) % SAFE_ZONE_COLORS.length];
-  state.settings.safeZoneColor = next;
+  const GREEN_INDEX = SAFE_ZONE_COLORS.indexOf("#00FF00");
+  if (state.settings.safeZoneAuto) {
+    state.settings.safeZoneAuto = false;
+    state.settings.safeZoneColor = SAFE_ZONE_COLORS[GREEN_INDEX + 1];
+  } else {
+    const current = (state.settings.safeZoneColor || DEFAULT_SAFE_ZONE_COLOR).toUpperCase();
+    const i = SAFE_ZONE_COLORS.indexOf(current);
+    if (i === GREEN_INDEX) {
+      state.settings.safeZoneAuto = true;
+      updateAutoSafeZoneColor();
+    } else if (i === -1) {
+      state.settings.safeZoneColor = SAFE_ZONE_COLORS[0];
+    } else {
+      state.settings.safeZoneColor = SAFE_ZONE_COLORS[(i + 1) % SAFE_ZONE_COLORS.length];
+    }
+  }
   persistSettings();
   applySafeZoneColorVar();
   rerender();
@@ -62,8 +162,10 @@ function cycleSafeZoneColor() {
 }
 
 function resetSafeZoneColor() {
-  if ((state.settings.safeZoneColor || "").toUpperCase() === DEFAULT_SAFE_ZONE_COLOR) return;
+  const isDefault = (state.settings.safeZoneColor || "").toUpperCase() === DEFAULT_SAFE_ZONE_COLOR;
+  if (isDefault && !state.settings.safeZoneAuto) return;
   state.settings.safeZoneColor = DEFAULT_SAFE_ZONE_COLOR;
+  state.settings.safeZoneAuto = false;
   persistSettings();
   applySafeZoneColorVar();
   rerender();
@@ -75,6 +177,10 @@ function applySafeZoneColorVar() {
     "--zone-color",
     state.settings.safeZoneColor || "#00ff00"
   );
+  if (els.safeZoneColor) {
+    els.safeZoneColor.classList.toggle("is-auto", !!state.settings.safeZoneAuto);
+    els.safeZoneColor.title = safeZoneColorTooltip();
+  }
 }
 
 function applyPreset(id) {
@@ -113,7 +219,9 @@ const state = {
   compareMode: false,
   compareHoverOverlay: false,
   hasManualCrop: false,
-  maxResolution: 2000,
+  maxResolution: 2500,
+  usingSource: false,
+  encodedBytes: null,
 };
 
 const els = {
@@ -312,9 +420,9 @@ const QUALITY_PRESETS = [
 ];
 
 const MAX_RES_PRESETS = [
-  { value: 1000, label: "1,000px" },
-  { value: 2000, label: "2,000px" },
-  { value: 4000, label: "4,000px" },
+  { value: 1500, label: "1,500px" },
+  { value: 2500, label: "2,500px" },
+  { value: 5000, label: "5,000px" },
   { value: 0, label: "No limit" },
 ];
 
@@ -394,10 +502,14 @@ function updateOutputMeta() {
 
   els.outputMetaLabel.textContent = "Output:";
   els.outputMetaDims.textContent = `${state.outputW.toLocaleString("en-US")} × ${state.outputH.toLocaleString("en-US")}`;
+  els.download.disabled = state.estimatedBytes == null;
+  els.download.classList.toggle("is-estimating", state.estimatedBytes == null);
   if (state.estimatedBytes != null) {
     els.outputMetaSize.textContent = formatBytes(state.estimatedBytes);
     els.outputMetaSize.classList.remove("is-estimating", "is-error");
-    if (state.image.byteLength > 0) {
+    if (state.usingSource) {
+      els.outputMetaCompare.textContent = " (using original)";
+    } else if (state.image.byteLength > 0) {
       const pct = ((state.estimatedBytes - state.image.byteLength) / state.image.byteLength) * 100;
       const rounded = Math.abs(pct).toFixed(0);
       if (rounded === "0") {
@@ -416,6 +528,12 @@ function updateOutputMeta() {
     }
     els.outputMetaSize.classList.add("is-estimating");
   }
+  updateDownloadLabel();
+}
+
+function updateDownloadLabel() {
+  if (!els.download) return;
+  els.download.textContent = state.usingSource ? "Download original" : "Download optimized JPEG";
 }
 
 function outputIntrinsicDimensions() {
@@ -464,6 +582,7 @@ function recomputeCropFromFocal() {
   state.crop = computeCropFromFocalPoint(state.image, effectiveFocal(), state.outputW, state.outputH);
   updateRemoveCropVisibility();
   syncCropUiFromState();
+  updateAutoSafeZoneColor();
 }
 
 function fullImageCrop() {
@@ -530,6 +649,8 @@ async function applyImage(image) {
   els.metaDims.textContent = `${image.width.toLocaleString("en-US")} × ${image.height.toLocaleString("en-US")}`;
   els.metaSize.textContent = formatBytes(image.byteLength);
 
+  state.maxResolution = 2500;
+  state.usingSource = false;
   const saved = loadImageState(image.hash);
   if (saved) {
     state.focal = snapFocalToPreset(saved.focalPoint || { x: 0.5, y: 0.5 });
@@ -543,8 +664,8 @@ async function applyImage(image) {
   } else {
     state.hasManualCrop = false;
     state.focal = { x: 0.5, y: 0.5 };
-    if (Math.max(image.width, image.height) > 2000) {
-      const ratio = 2000 / Math.max(image.width, image.height);
+    if (Math.max(image.width, image.height) > state.maxResolution) {
+      const ratio = state.maxResolution / Math.max(image.width, image.height);
       state.outputW = Math.round(image.width * ratio);
       state.outputH = Math.round(image.height * ratio);
     } else {
@@ -556,7 +677,6 @@ async function applyImage(image) {
   }
 
   state.outputAspect = state.outputW / state.outputH;
-  state.maxResolution = 2000;
   updateMaxResolutionDisplay();
   clampOutputToCap();
   if (!state.hasManualCrop) {
@@ -571,6 +691,7 @@ async function applyImage(image) {
   els.compareBtn.hidden = false;
   els.layout.classList.add("has-image");
   updateRemoveCropVisibility();
+  updateAutoSafeZoneColor();
   state.estimatedBytes = null;
   rerender();
   scheduleEstimate();
@@ -595,7 +716,8 @@ function handleClearImage() {
   els.infoBtn.hidden = true;
   els.compareBtn.hidden = true;
   state.hasManualCrop = false;
-  state.maxResolution = 2000;
+  state.maxResolution = 2500;
+  state.usingSource = false;
   updateMaxResolutionDisplay();
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
   state.compressedBitmap = null;
@@ -650,6 +772,7 @@ function wireSettingsInputs() {
     applyLayoutFromSettings();
     syncPresetUI();
     rerender();
+    if (modalState.active) renderModal();
   });
   els.formLayout.addEventListener("change", () => {
     state.settings.layout = els.formLayout.value;
@@ -666,6 +789,7 @@ function wireSettingsInputs() {
     persistSettings();
     syncPresetUI();
     rerender();
+    if (modalState.active) renderModal();
   });
   els.safeZoneColor.addEventListener("click", cycleSafeZoneColor);
 }
@@ -955,20 +1079,38 @@ function wireCompression() {
 
   els.download.addEventListener("click", async () => {
     if (!state.image || !state.crop) return;
+    if (state.usingSource) {
+      triggerDownload(
+        state.image.bytes,
+        suggestFilename(state.image.filename, state.image.mimeType),
+        state.image.mimeType
+      );
+      return;
+    }
+    if (state.encodedBytes) {
+      triggerDownload(
+        state.encodedBytes,
+        suggestFilename(state.image.filename, "image/jpeg"),
+        "image/jpeg"
+      );
+      return;
+    }
     els.download.disabled = true;
     const oldText = els.download.textContent;
     els.download.textContent = "Encoding…";
     try {
       const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
       const bytes = await encodeJpegInWorker(imageData, state.quality);
-      triggerDownload(bytes, suggestFilename(state.image.filename));
+      state.encodedBytes = bytes;
       state.estimatedBytes = bytes.byteLength;
+      triggerDownload(bytes, suggestFilename(state.image.filename, "image/jpeg"), "image/jpeg");
       updateSizeEstimate();
     } catch (err) {
       showError(`Encoding failed: ${err.message || err}`);
     } finally {
       els.download.disabled = false;
       els.download.textContent = oldText;
+      updateDownloadLabel();
     }
   });
 }
@@ -982,6 +1124,7 @@ function debouncedSliderEffects(fn) {
   clearTimeout(sliderEffectsTimer);
   sliderEffectsTimer = setTimeout(fn, 200);
 }
+let scheduleRerenderRaf = 0;
 function scheduleEstimate() {
   if (!state.image || !state.crop) {
     setPreviewLoading(false);
@@ -989,6 +1132,7 @@ function scheduleEstimate() {
   }
   estimateGeneration++;
   state.estimatedBytes = null;
+  state.encodedBytes = null;
   updateOutputMeta();
   setPreviewLoading(true);
   if (state.compressedBitmap?.close) state.compressedBitmap.close();
@@ -996,7 +1140,12 @@ function scheduleEstimate() {
   state.compareMode = false;
   state.compareHoverOverlay = false;
   syncCompareUi();
-  rerender();
+  if (!scheduleRerenderRaf) {
+    scheduleRerenderRaf = requestAnimationFrame(() => {
+      scheduleRerenderRaf = 0;
+      rerender();
+    });
+  }
   clearTimeout(estimateTimer);
   estimateTimer = setTimeout(runEstimate, 250);
 }
@@ -1013,17 +1162,30 @@ async function runEstimate() {
     const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
     const bytes = await encodeJpegInWorker(imageData, state.quality);
     if (gen !== estimateGeneration) return;
-    state.estimatedBytes = bytes.byteLength;
-    const blob = new Blob([bytes], { type: "image/jpeg" });
-    const bitmap = await createImageBitmap(blob);
-    if (gen !== estimateGeneration) {
-      bitmap.close?.();
-      return;
+    const isFullSize = !state.hasManualCrop &&
+      state.outputW >= state.image.width &&
+      state.outputH >= state.image.height;
+    state.usingSource = isFullSize && bytes.byteLength > state.image.byteLength;
+    if (state.usingSource) {
+      state.estimatedBytes = state.image.byteLength;
+      if (state.compressedBitmap?.close) state.compressedBitmap.close();
+      state.compressedBitmap = null;
+      rerender();
+      updateSizeEstimate();
+    } else {
+      state.estimatedBytes = bytes.byteLength;
+      state.encodedBytes = bytes;
+      const blob = new Blob([bytes], { type: "image/jpeg" });
+      const bitmap = await createImageBitmap(blob);
+      if (gen !== estimateGeneration) {
+        bitmap.close?.();
+        return;
+      }
+      if (state.compressedBitmap?.close) state.compressedBitmap.close();
+      state.compressedBitmap = bitmap;
+      rerender();
+      updateSizeEstimate();
     }
-    if (state.compressedBitmap?.close) state.compressedBitmap.close();
-    state.compressedBitmap = bitmap;
-    rerender();
-    updateSizeEstimate();
   } catch (err) {
     els.outputMetaSize.textContent = `Estimate failed: ${err.message || err}`;
     els.outputMetaSize.classList.remove("is-estimating");
@@ -1153,10 +1315,9 @@ function updateCropSizeWarning(crop) {
   if (outputW < suggestedMinW || outputH < suggestedMinH) {
     els.cropSizeWarning.hidden = false;
     els.cropSizeWarningText.textContent = `Output is small (${outputW}×${outputH}). Suggested minimum: ${suggestedMinW}×${suggestedMinH}px.`;
-    const cap = detailCap();
     const canFix = state.image &&
-      Math.min(cap, state.image.width) >= suggestedMinW &&
-      Math.min(cap, state.image.height) >= suggestedMinH;
+      state.image.width >= suggestedMinW &&
+      state.image.height >= suggestedMinH;
     els.cropFixBtn.hidden = !canFix;
   } else if (max > detailCap()) {
     els.cropSizeWarning.hidden = false;
@@ -1170,10 +1331,54 @@ function updateCropSizeWarning(crop) {
 }
 
 function fixCropToMeetMin() {
-  if (!state.image || !modalState.active || !modalState.crop) return;
+  if (!state.image) return;
   const fw = state.settings.formWidth || 0;
   const minW = Math.round((1920 - fw) / 100) * 100;
   const minH = 1100;
+  if (state.image.width < minW || state.image.height < minH) return;
+
+  const cropW = state.hasManualCrop && state.crop ? state.crop.w : state.image.width;
+  const cropH = state.hasManualCrop && state.crop ? state.crop.h : state.image.height;
+
+  // Step 1: try only bumping max-res. Works when current crop is already big enough
+  // to satisfy the minimum once the cap is raised.
+  if (cropW >= minW && cropH >= minH) {
+    const intrinsicMax = Math.max(cropW, cropH);
+    const requiredScale = Math.max(minW / cropW, minH / cropH);
+    const requiredCap = Math.ceil(requiredScale * intrinsicMax);
+    for (const preset of MAX_RES_PRESETS) {
+      const presetCap = preset.value === 0 ? Infinity : preset.value;
+      if (Math.min(presetCap, intrinsicMax) >= requiredCap) {
+        state.maxResolution = preset.value;
+        updateMaxResolutionDisplay();
+        if (clampOutputToCap()) {
+          syncOutputAndQualityToInputs();
+          if (!state.hasManualCrop) recomputeCropFromFocal();
+          rerender();
+          persistImageState();
+          scheduleEstimate();
+        }
+        return;
+      }
+    }
+  }
+
+  // Step 2: bumping cap alone can't fix it (manual crop is smaller than min in
+  // some dimension). Set max-res to "No limit" and expand the crop.
+  state.maxResolution = 0;
+  updateMaxResolutionDisplay();
+
+  if (!state.hasManualCrop || !modalState.active || !modalState.crop) {
+    if (clampOutputToCap()) {
+      syncOutputAndQualityToInputs();
+      if (!state.hasManualCrop) recomputeCropFromFocal();
+      rerender();
+      persistImageState();
+      scheduleEstimate();
+    }
+    return;
+  }
+
   const targetW = Math.min(state.image.width, Math.max(modalState.crop.w, minW));
   const targetH = Math.min(state.image.height, Math.max(modalState.crop.h, minH));
   const dw = targetW - modalState.crop.w;
@@ -1218,15 +1423,17 @@ function drawModalCropSafeZone(ctx, rect, scale) {
 }
 
 function cropModalOutputWidth(cropW, cropH) {
+  const cap = detailCap();
   const max = Math.max(cropW, cropH);
-  if (max <= 2000) return cropW;
-  return Math.max(1, Math.round(cropW * (2000 / max)));
+  if (max <= cap) return cropW;
+  return Math.max(1, Math.round(cropW * (cap / max)));
 }
 
 function cropModalOutputHeight(cropW, cropH) {
+  const cap = detailCap();
   const max = Math.max(cropW, cropH);
-  if (max <= 2000) return cropH;
-  return Math.max(1, Math.round(cropH * (2000 / max)));
+  if (max <= cap) return cropH;
+  return Math.max(1, Math.round(cropH * (cap / max)));
 }
 
 function modalHandlePositions(x, y, w, h) {
@@ -1267,8 +1474,8 @@ function applyDragFree(drag, dx, dy) {
   return { x, y, w, h };
 }
 
-function modalCanvasCoords(e) {
-  const rect = els.modalCanvas.getBoundingClientRect();
+function modalCanvasCoords(e, cachedRect) {
+  const rect = cachedRect || els.modalCanvas.getBoundingClientRect();
   const px = (e.clientX - rect.left) * (els.modalCanvas.width / rect.width);
   const py = (e.clientY - rect.top) * (els.modalCanvas.height / rect.height);
   return { px, py };
@@ -1294,6 +1501,7 @@ function commitModalCrop() {
   highlightFocalPreset();
   updateFocalAttributeHint();
   updateRemoveCropVisibility();
+  updateAutoSafeZoneColor();
   rerender();
   persistImageState();
   scheduleEstimate();
@@ -1304,7 +1512,8 @@ function wireCropModal() {
 
   els.modalCanvas.addEventListener("mousedown", (e) => {
     if (!modalState.active || !state.image) return;
-    const { px, py } = modalCanvasCoords(e);
+    const rect = els.modalCanvas.getBoundingClientRect();
+    const { px, py } = modalCanvasCoords(e, rect);
     const handle = modalHitTest(px, py);
     modalState.drag = {
       handle: handle || "new",
@@ -1312,41 +1521,52 @@ function wireCropModal() {
       startPy: py,
       startCrop: handle ? { ...modalState.crop } : null,
       moved: false,
+      rect,
     };
     modalState.removeCrop = false;
   });
 
+  let dragRaf = 0;
+  let pendingDragEvent = null;
   window.addEventListener("mousemove", (e) => {
     if (!modalState.drag || !modalState.active || !state.image) return;
-    const { px, py } = modalCanvasCoords(e);
-    const dxPx = px - modalState.drag.startPx;
-    const dyPx = py - modalState.drag.startPy;
-    if (!modalState.drag.moved && Math.hypot(dxPx, dyPx) < 3) return;
-    modalState.drag.moved = true;
+    pendingDragEvent = e;
+    if (dragRaf) return;
+    dragRaf = requestAnimationFrame(() => {
+      dragRaf = 0;
+      const ev = pendingDragEvent;
+      pendingDragEvent = null;
+      if (!ev || !modalState.drag || !modalState.active || !state.image) return;
+      const { px, py } = modalCanvasCoords(ev, modalState.drag.rect);
+      const dxPx = px - modalState.drag.startPx;
+      const dyPx = py - modalState.drag.startPy;
+      if (!modalState.drag.moved && Math.hypot(dxPx, dyPx) < 3) return;
+      modalState.drag.moved = true;
 
-    if (modalState.drag.handle === "new") {
-      const ix = modalState.drag.startPx / modalState.scale;
-      const iy = modalState.drag.startPy / modalState.scale;
-      const dxImg = px / modalState.scale - ix;
-      const dyImg = py / modalState.scale - iy;
-      modalState.crop = clampCrop(
-        {
-          x: dxImg < 0 ? ix + dxImg : ix,
-          y: dyImg < 0 ? iy + dyImg : iy,
-          w: Math.abs(dxImg),
-          h: Math.abs(dyImg),
-        },
-        state.image
-      );
-    } else {
-      const dx = dxPx / modalState.scale;
-      const dy = dyPx / modalState.scale;
-      modalState.crop = clampCrop(
-        applyDragFree(modalState.drag, dx, dy),
-        state.image
-      );
-    }
-    renderModal();
+      if (modalState.drag.handle === "new") {
+        const ix = modalState.drag.startPx / modalState.scale;
+        const iy = modalState.drag.startPy / modalState.scale;
+        const dxImg = px / modalState.scale - ix;
+        const dyImg = py / modalState.scale - iy;
+        modalState.crop = clampCrop(
+          {
+            x: dxImg < 0 ? ix + dxImg : ix,
+            y: dyImg < 0 ? iy + dyImg : iy,
+            w: Math.abs(dxImg),
+            h: Math.abs(dyImg),
+          },
+          state.image
+        );
+      } else {
+        const dx = dxPx / modalState.scale;
+        const dy = dyPx / modalState.scale;
+        modalState.crop = clampCrop(
+          applyDragFree(modalState.drag, dx, dy),
+          state.image
+        );
+      }
+      renderModal();
+    });
   });
 
   window.addEventListener("mouseup", () => {
@@ -1379,7 +1599,14 @@ function init() {
   wireInfoModal();
   wireVideoModal();
 
-  const ro = new ResizeObserver(() => rerender());
+  let resizeRaf = 0;
+  const ro = new ResizeObserver(() => {
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      rerender();
+    });
+  });
   ro.observe(els.canvas.parentElement);
 
   rerender();

@@ -148,14 +148,21 @@ export function clampCrop(crop, image) {
   };
 }
 
+let workCanvas = null;
+let workCtx = null;
+
 export function cropToImageData(image, crop, outputW, outputH) {
-  const canvas = document.createElement("canvas");
-  canvas.width = outputW;
-  canvas.height = outputH;
-  const ctx = canvas.getContext("2d");
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image.bitmap, crop.x, crop.y, crop.w, crop.h, 0, 0, outputW, outputH);
-  return ctx.getImageData(0, 0, outputW, outputH);
+  if (!workCanvas) {
+    workCanvas = document.createElement("canvas");
+    workCtx = workCanvas.getContext("2d");
+    workCtx.imageSmoothingQuality = "high";
+  }
+  if (workCanvas.width !== outputW) workCanvas.width = outputW;
+  if (workCanvas.height !== outputH) workCanvas.height = outputH;
+  workCtx.imageSmoothingQuality = "high";
+  workCtx.clearRect(0, 0, outputW, outputH);
+  workCtx.drawImage(image.bitmap, crop.x, crop.y, crop.w, crop.h, 0, 0, outputW, outputH);
+  return workCtx.getImageData(0, 0, outputW, outputH);
 }
 
 export function formatBytes(n) {
