@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=21" />
+  <link rel="stylesheet" href="css/styles.css?v=24" />
 </head>
 <body>
   <main class="layout">
@@ -63,7 +63,7 @@
             <canvas id="modal-canvas"></canvas>
           </div>
           <div class="crop-inline-controls">
-            <p id="crop-size-warning" class="crop-size-warning" hidden></p>
+            <p id="crop-size-warning" class="crop-size-warning" hidden><span id="crop-size-warning-text"></span> <button type="button" id="crop-fix-btn" class="crop-fix-btn" hidden>Fix it</button></p>
             <p class="reset-crop-row" id="reset-crop-row"><button type="button" id="reset-crop">Remove crop</button></p>
           </div>
         </div>
@@ -178,6 +178,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=37"></script>
+  <script type="module" src="js/app.js?v=45"></script>
 </body>
 </html>

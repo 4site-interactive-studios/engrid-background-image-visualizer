@@ -8,7 +8,8 @@ import {
   formatBytes,
 } from "./imagework.js?v=30";
 import { fitCanvasToContainer, render, drawActiveSafeZone } from "./overlay.js?v=30";
-import { encodeJpeg, triggerDownload, suggestFilename } from "./compress.js?v=30";
+import { triggerDownload, suggestFilename } from "./compress.js?v=30";
+import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
@@ -163,6 +164,8 @@ const els = {
   modal: $("crop-inline"),
   modalCanvas: $("modal-canvas"),
   cropSizeWarning: $("crop-size-warning"),
+  cropSizeWarningText: $("crop-size-warning-text"),
+  cropFixBtn: $("crop-fix-btn"),
   resetCropRow: $("reset-crop-row"),
 };
 
@@ -476,9 +479,14 @@ function clampOutputToCap() {
   const targetMax = Math.min(cap, intrinsicMax);
   const currentMax = Math.max(state.outputW, state.outputH);
   if (Math.abs(currentMax - targetMax) < 1) return false;
-  const scale = targetMax / currentMax;
-  state.outputW = Math.max(1, Math.round(state.outputW * scale));
-  state.outputH = Math.max(1, Math.round(state.outputH * scale));
+  if (targetMax >= intrinsicMax) {
+    state.outputW = intrinsic.w;
+    state.outputH = intrinsic.h;
+  } else {
+    const scale = targetMax / currentMax;
+    state.outputW = Math.max(1, Math.round(state.outputW * scale));
+    state.outputH = Math.max(1, Math.round(state.outputH * scale));
+  }
   state.outputAspect = state.outputW / state.outputH;
   return true;
 }
@@ -511,6 +519,7 @@ function highlightFocalPreset() {
 function setFocalFromPreset(value) {
   const [x, y] = value.split(",").map(parseFloat);
   state.focal = { x, y };
+  if (modalState.active) modalState.focal = { x, y };
   highlightFocalPreset();
 }
 
@@ -841,10 +850,12 @@ function wireFocalAndCrop() {
     if (!state.image) return;
     if (clampOutputToCap()) {
       syncOutputAndQualityToInputs();
-      if (!state.hasManualCrop) recomputeCropFromFocal();
-      rerender();
-      persistImageState();
-      scheduleEstimate();
+      debouncedSliderEffects(() => {
+        if (!state.hasManualCrop) recomputeCropFromFocal();
+        rerender();
+        persistImageState();
+        scheduleEstimate();
+      });
     }
   });
 
@@ -900,8 +911,10 @@ function wireCompression() {
     state.quality = QUALITY_PRESETS[idx].value;
     updateQualityDisplay();
     updateCompressionWarning();
-    scheduleEstimate();
-    persistImageState();
+    debouncedSliderEffects(() => {
+      scheduleEstimate();
+      persistImageState();
+    });
   });
 
   const setCompareHoverOverlay = (active) => {
@@ -947,7 +960,7 @@ function wireCompression() {
     els.download.textContent = "Encoding…";
     try {
       const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-      const bytes = await encodeJpeg(imageData, state.quality);
+      const bytes = await encodeJpegInWorker(imageData, state.quality);
       triggerDownload(bytes, suggestFilename(state.image.filename));
       state.estimatedBytes = bytes.byteLength;
       updateSizeEstimate();
@@ -963,6 +976,12 @@ function wireCompression() {
 let estimateTimer = null;
 let estimateInFlight = false;
 let estimateGeneration = 0;
+
+let sliderEffectsTimer = null;
+function debouncedSliderEffects(fn) {
+  clearTimeout(sliderEffectsTimer);
+  sliderEffectsTimer = setTimeout(fn, 200);
+}
 function scheduleEstimate() {
   if (!state.image || !state.crop) {
     setPreviewLoading(false);
@@ -992,7 +1011,7 @@ async function runEstimate() {
   const gen = estimateGeneration;
   try {
     const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-    const bytes = await encodeJpeg(imageData, state.quality);
+    const bytes = await encodeJpegInWorker(imageData, state.quality);
     if (gen !== estimateGeneration) return;
     state.estimatedBytes = bytes.byteLength;
     const blob = new Blob([bytes], { type: "image/jpeg" });
@@ -1119,7 +1138,8 @@ function renderModal() {
 function updateCropSizeWarning(crop) {
   if (!crop) {
     els.cropSizeWarning.hidden = true;
-    els.cropSizeWarning.textContent = "";
+    els.cropSizeWarningText.textContent = "";
+    els.cropFixBtn.hidden = true;
     return;
   }
 
@@ -1132,14 +1152,41 @@ function updateCropSizeWarning(crop) {
 
   if (outputW < suggestedMinW || outputH < suggestedMinH) {
     els.cropSizeWarning.hidden = false;
-    els.cropSizeWarning.textContent = `Output is small (${outputW}×${outputH}). Suggested minimum: ${suggestedMinW}×${suggestedMinH}px.`;
+    els.cropSizeWarningText.textContent = `Output is small (${outputW}×${outputH}). Suggested minimum: ${suggestedMinW}×${suggestedMinH}px.`;
+    const cap = detailCap();
+    const canFix = state.image &&
+      Math.min(cap, state.image.width) >= suggestedMinW &&
+      Math.min(cap, state.image.height) >= suggestedMinH;
+    els.cropFixBtn.hidden = !canFix;
   } else if (max > detailCap()) {
     els.cropSizeWarning.hidden = false;
-    els.cropSizeWarning.textContent = `Output is large (${outputW}×${outputH}). Recommended longest side: 1500–2000px.`;
+    els.cropSizeWarningText.textContent = `Output is large (${outputW}×${outputH}). Recommended longest side: 1500–2000px.`;
+    els.cropFixBtn.hidden = true;
   } else {
     els.cropSizeWarning.hidden = true;
-    els.cropSizeWarning.textContent = "";
+    els.cropSizeWarningText.textContent = "";
+    els.cropFixBtn.hidden = true;
   }
+}
+
+function fixCropToMeetMin() {
+  if (!state.image || !modalState.active || !modalState.crop) return;
+  const fw = state.settings.formWidth || 0;
+  const minW = Math.round((1920 - fw) / 100) * 100;
+  const minH = 1100;
+  const targetW = Math.min(state.image.width, Math.max(modalState.crop.w, minW));
+  const targetH = Math.min(state.image.height, Math.max(modalState.crop.h, minH));
+  const dw = targetW - modalState.crop.w;
+  const dh = targetH - modalState.crop.h;
+  let nx = modalState.crop.x - dw / 2;
+  let ny = modalState.crop.y - dh / 2;
+  if (nx < 0) nx = 0;
+  if (ny < 0) ny = 0;
+  if (nx + targetW > state.image.width) nx = state.image.width - targetW;
+  if (ny + targetH > state.image.height) ny = state.image.height - targetH;
+  modalState.crop = { x: nx, y: ny, w: targetW, h: targetH };
+  commitModalCrop();
+  syncCropUiFromState();
 }
 
 function drawModalCropSafeZone(ctx, rect, scale) {
@@ -1253,6 +1300,8 @@ function commitModalCrop() {
 }
 
 function wireCropModal() {
+  els.cropFixBtn.addEventListener("click", fixCropToMeetMin);
+
   els.modalCanvas.addEventListener("mousedown", (e) => {
     if (!modalState.active || !state.image) return;
     const { px, py } = modalCanvasCoords(e);
