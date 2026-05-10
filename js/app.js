@@ -7,7 +7,7 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js?v=31";
-import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=36";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=39";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
@@ -83,19 +83,41 @@ function rgbDistance(a, b) {
 
 function computeAverageColor() {
   if (!state.image) return null;
+
+  const cropX = state.crop ? state.crop.x : 0;
+  const cropY = state.crop ? state.crop.y : 0;
+  const cropW = state.crop ? state.crop.w : state.image.width;
+  const cropH = state.crop ? state.crop.h : state.image.height;
+
+  const outputW = state.outputW || cropW;
+  const sourcePerOutput = outputW > 0 ? cropW / outputW : 1;
+
+  const settings = effectiveSafeZoneSettings();
+  const safeZoneSource = settings.safeZoneWidth * sourcePerOutput;
+  const bandSource = 30 * sourcePerOutput;
+  const totalWarm = bandSource * 5;
+
+  const focalX = effectiveFocal().x;
+  let safeXInCrop;
+  if (focalX <= 0.25) safeXInCrop = 0;
+  else if (focalX >= 0.75) safeXInCrop = cropW - safeZoneSource;
+  else safeXInCrop = (cropW - safeZoneSource) / 2;
+
+  const leftX = Math.max(0, safeXInCrop - totalWarm);
+  const rightX = Math.min(cropW, safeXInCrop + safeZoneSource + totalWarm);
+  const sampleW = Math.max(1, rightX - leftX);
+
+  const sx = cropX + leftX;
+  const sy = cropY;
+  const sw = sampleW;
+  const sh = cropH;
+
   const sampleSize = 8;
   const tmp = document.createElement("canvas");
   tmp.width = sampleSize;
   tmp.height = sampleSize;
   const ctx = tmp.getContext("2d");
   ctx.imageSmoothingQuality = "high";
-  let sx = 0, sy = 0, sw = state.image.width, sh = state.image.height;
-  if (state.hasManualCrop && state.crop) {
-    sx = state.crop.x;
-    sy = state.crop.y;
-    sw = state.crop.w;
-    sh = state.crop.h;
-  }
   try {
     ctx.drawImage(state.image.bitmap, sx, sy, sw, sh, 0, 0, sampleSize, sampleSize);
     const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
@@ -125,17 +147,23 @@ function pickAutoColor(avg) {
   return best;
 }
 
+let autoColorTimer = null;
 function updateAutoSafeZoneColor() {
   if (!state.settings.safeZoneAuto || !state.image) return;
-  const avg = computeAverageColor();
-  if (!avg) return;
-  const newColor = pickAutoColor(avg);
-  if (newColor === state.settings.safeZoneColor) return;
-  state.settings.safeZoneColor = newColor;
-  persistSettings();
-  applySafeZoneColorVar();
-  rerender();
-  renderModal();
+  if (autoColorTimer) clearTimeout(autoColorTimer);
+  autoColorTimer = setTimeout(() => {
+    autoColorTimer = null;
+    if (!state.settings.safeZoneAuto || !state.image) return;
+    const avg = computeAverageColor();
+    if (!avg) return;
+    const newColor = pickAutoColor(avg);
+    if (newColor === state.settings.safeZoneColor) return;
+    state.settings.safeZoneColor = newColor;
+    persistSettings();
+    applySafeZoneColorVar();
+    rerender();
+    renderModal();
+  }, 150);
 }
 
 function cycleSafeZoneColor() {
@@ -196,6 +224,7 @@ function applyPreset(id) {
   syncSettingsToInputs();
   applyLayoutFromSettings();
   syncPresetUI();
+  updateAutoSafeZoneColor();
   rerender();
   if (modalState.active) renderModal();
 }
@@ -896,6 +925,7 @@ function wireSettingsInputs() {
     persistSettings();
     applyLayoutFromSettings();
     syncPresetUI();
+    updateAutoSafeZoneColor();
     rerender();
     if (modalState.active) renderModal();
   });
@@ -906,6 +936,7 @@ function wireSettingsInputs() {
     applyLayoutFromSettings();
     syncPresetUI();
     if (state.image && !state.hasManualCrop) recomputeCropFromFocal();
+    updateAutoSafeZoneColor();
     rerender();
     if (modalState.active) renderModal();
   });
@@ -914,6 +945,7 @@ function wireSettingsInputs() {
     markPresetCustomIfChanged();
     persistSettings();
     syncPresetUI();
+    updateAutoSafeZoneColor();
     rerender();
     if (modalState.active) renderModal();
   });
@@ -1085,6 +1117,7 @@ function wireFocalAndCrop() {
     if (!state.image) return;
     setFocalFromPreset(els.focalPreset.value);
     if (!state.hasManualCrop) recomputeCropFromFocal();
+    updateAutoSafeZoneColor();
     rerender();
     if (modalState.active) renderModal();
     persistImageState();
@@ -1566,9 +1599,7 @@ function drawModalCropSafeZone(ctx, rect, scale) {
   const safeZoneWidth = outputW > 0
     ? safeZoneSettings.safeZoneWidth * (rect.w / outputW)
     : 0;
-  const warmZoneBandWidth = outputW > 0
-    ? 30 * (rect.w / outputW)
-    : 0;
+  const warmZoneBandWidth = safeZoneWidth * (30 / 350);
 
   ctx.save();
   ctx.beginPath();
@@ -1778,6 +1809,19 @@ function wireCropModal() {
       rect,
     };
     modalState.removeCrop = false;
+    if (handle === "move") els.modalCanvas.style.cursor = "grabbing";
+  });
+
+  els.modalCanvas.addEventListener("mousemove", (e) => {
+    if (modalState.drag || !modalState.active || !state.image) return;
+    const { px, py } = modalCanvasCoords(e);
+    const handle = modalHitTest(px, py);
+    els.modalCanvas.style.cursor = handle === "move" ? "grab" : "";
+  });
+
+  els.modalCanvas.addEventListener("mouseleave", () => {
+    if (modalState.drag) return;
+    els.modalCanvas.style.cursor = "";
   });
 
   let dragRaf = 0;
@@ -1827,6 +1871,7 @@ function wireCropModal() {
     if (!modalState.drag) return;
     const moved = modalState.drag.moved;
     modalState.drag = null;
+    els.modalCanvas.style.cursor = "";
     if (moved) commitModalCrop();
   });
 

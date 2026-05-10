@@ -102,19 +102,19 @@ export function drawFocalSectionCircle(ctx, canvas, focal, color, fillAlpha, saf
   };
 
   const cx = safeZoneRect.x + safeZoneRect.w / 2;
-  const cy = sectionCenter(focal.y, canvas.height);
-  const radius = safeZoneRect.w / 4;
+  const horizontalClearance = safeZoneRect.w / 8;
+  const targetRadius = (safeZoneRect.w * 3) / 8;
+  const radius = Math.max(0, Math.min(targetRadius, (canvas.height - 2 * horizontalClearance) / 2));
   if (radius <= 0) return;
+  const sectionCy = sectionCenter(focal.y, canvas.height);
+  const minCy = radius + horizontalClearance;
+  const maxCy = canvas.height - radius - horizontalClearance;
+  const cy = maxCy >= minCy ? Math.max(minCy, Math.min(sectionCy, maxCy)) : canvas.height / 2;
 
   ctx.save();
-  ctx.fillStyle = rgba(color, fillAlpha);
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = rgba(color, 0.85);
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([5, 4]);
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.stroke();
@@ -140,9 +140,9 @@ export function drawActiveSafeZone(ctx, canvas, columnWidthPx, focalX, color, wa
   ctx.fillStyle = rgba(color, safeZoneFillAlpha);
   ctx.fillRect(x, 0, colW, canvas.height);
 
-  ctx.strokeStyle = rgba(color, 0.85);
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([5, 4]);
   ctx.beginPath();
   ctx.moveTo(x + 0.5, 0);
   ctx.lineTo(x + 0.5, canvas.height);
