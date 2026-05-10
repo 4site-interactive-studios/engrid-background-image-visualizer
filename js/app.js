@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=32";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=33";
 import {
   loadFromFile,
   loadFromUrl,
@@ -134,17 +134,73 @@ function computeAverageColor() {
   }
 }
 
-function pickAutoColor(avg) {
-  let best = SAFE_ZONE_COLORS[0];
-  let bestDist = -1;
-  for (const c of SAFE_ZONE_COLORS) {
-    const d = rgbDistance(avg, hexToRgb(c));
-    if (d > bestDist) {
-      bestDist = d;
-      best = c;
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
     }
   }
-  return best;
+  return { h, s, l };
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return { r: v, g: v, b: v };
+  }
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return {
+    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h) * 255),
+    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  const toHex = (v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0").toUpperCase();
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function pickAutoColor(avg) {
+  const { h, s, l } = rgbToHsl(avg.r, avg.g, avg.b);
+  let newH;
+  let newS;
+  let newL;
+  if (s < 0.15) {
+    // Near grayscale — pick a vivid hue with contrasting lightness
+    newH = 0;
+    newS = 0.9;
+    newL = l > 0.5 ? 0.32 : 0.68;
+  } else {
+    newH = (h + 0.5) % 1;
+    newS = Math.max(0.75, s);
+    newL = l > 0.5 ? 0.32 : 0.68;
+    if (Math.abs(l - 0.5) < 0.1) newL = 0.28;
+  }
+  let result = rgbToHex(hslToRgb(newH, newS, newL));
+  // Safety: if for some reason result is too close to avg, push lightness further
+  if (rgbDistance(avg, hexToRgb(result)) < 150) {
+    newL = newL > 0.5 ? 0.85 : 0.15;
+    result = rgbToHex(hslToRgb(newH, newS, newL));
+  }
+  return result;
 }
 
 let autoColorTimer = null;
@@ -166,21 +222,21 @@ function updateAutoSafeZoneColor() {
   }, 150);
 }
 
+const MANUAL_CYCLE_ORDER = [3, 4, 5, 0, 1, 2];
+
 function cycleSafeZoneColor() {
-  const GREEN_INDEX = SAFE_ZONE_COLORS.indexOf("#00FF00");
   if (state.settings.safeZoneAuto) {
     state.settings.safeZoneAuto = false;
-    state.settings.safeZoneColor = SAFE_ZONE_COLORS[GREEN_INDEX + 1];
+    state.settings.safeZoneColor = SAFE_ZONE_COLORS[MANUAL_CYCLE_ORDER[0]];
   } else {
-    const current = (state.settings.safeZoneColor || DEFAULT_SAFE_ZONE_COLOR).toUpperCase();
+    const current = (state.settings.safeZoneColor || "").toUpperCase();
     const i = SAFE_ZONE_COLORS.indexOf(current);
-    if (i === GREEN_INDEX) {
+    const pos = MANUAL_CYCLE_ORDER.indexOf(i);
+    if (pos === -1 || pos === MANUAL_CYCLE_ORDER.length - 1) {
       state.settings.safeZoneAuto = true;
       updateAutoSafeZoneColor();
-    } else if (i === -1) {
-      state.settings.safeZoneColor = SAFE_ZONE_COLORS[0];
     } else {
-      state.settings.safeZoneColor = SAFE_ZONE_COLORS[(i + 1) % SAFE_ZONE_COLORS.length];
+      state.settings.safeZoneColor = SAFE_ZONE_COLORS[MANUAL_CYCLE_ORDER[pos + 1]];
     }
   }
   persistSettings();
@@ -190,12 +246,14 @@ function cycleSafeZoneColor() {
 }
 
 function resetSafeZoneColor() {
-  const isDefault = (state.settings.safeZoneColor || "").toUpperCase() === DEFAULT_SAFE_ZONE_COLOR;
-  if (isDefault && !state.settings.safeZoneAuto) return;
-  state.settings.safeZoneColor = DEFAULT_SAFE_ZONE_COLOR;
-  state.settings.safeZoneAuto = false;
+  if (state.settings.safeZoneAuto) {
+    updateAutoSafeZoneColor();
+    return;
+  }
+  state.settings.safeZoneAuto = true;
   persistSettings();
   applySafeZoneColorVar();
+  updateAutoSafeZoneColor();
   rerender();
   renderModal();
 }
@@ -1603,10 +1661,8 @@ function drawModalCropSafeZone(ctx, rect, scale) {
   const safeZoneSettings = effectiveCropSafeZoneSettings();
   const isCenter = isCenterFormPosition();
   const mainCanvasW = els.canvas.width;
-  const cropSourceW = scale > 0 ? rect.w / scale : 0;
-  const outputW = cropSourceW > 0 ? cropModalOutputWidth(cropSourceW, rect.h / scale) : 0;
-  const safeZoneWidth = outputW > 0
-    ? safeZoneSettings.safeZoneWidth * (rect.w / outputW)
+  const safeZoneWidth = mainCanvasW > 0
+    ? safeZoneSettings.safeZoneWidth * (rect.w / mainCanvasW)
     : 0;
   const warmZoneBandWidth = safeZoneWidth * (30 / 350);
 

@@ -9,7 +9,7 @@ const DEFAULTS = {
     layout: "left",
     safeZoneWidth: 350,
     safeZoneColor: DEFAULT_SAFE_ZONE_COLOR,
-    safeZoneAuto: false,
+    safeZoneAuto: true,
     preset: "ngs-left",
   },
   images: {},
