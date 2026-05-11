@@ -13,6 +13,7 @@ import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
+const DEBUG = new URLSearchParams(window.location.search).get("debug") === "true";
 
 const PRESETS = [
   { id: "ngs-left", name: "NGS - Left", layout: "left", formWidth: 550, safeZoneWidth: 350 },
@@ -94,8 +95,6 @@ function computeAverageColor() {
 
   const settings = effectiveSafeZoneSettings();
   const safeZoneSource = settings.safeZoneWidth * sourcePerOutput;
-  const bandSource = 30 * sourcePerOutput;
-  const totalWarm = bandSource * 5;
 
   const focalX = effectiveFocal().x;
   let safeXInCrop;
@@ -103,8 +102,8 @@ function computeAverageColor() {
   else if (focalX >= 0.75) safeXInCrop = cropW - safeZoneSource;
   else safeXInCrop = (cropW - safeZoneSource) / 2;
 
-  const leftX = Math.max(0, safeXInCrop - totalWarm);
-  const rightX = Math.min(cropW, safeXInCrop + safeZoneSource + totalWarm);
+  const leftX = Math.max(0, safeXInCrop);
+  const rightX = Math.min(cropW, safeXInCrop + safeZoneSource);
   const sampleW = Math.max(1, rightX - leftX);
 
   const sx = cropX + leftX;
@@ -183,24 +182,37 @@ function pickAutoColor(avg) {
   let newH;
   let newS;
   let newL;
+  let branch;
   if (s < 0.15) {
     // Near grayscale — pick a vivid hue with contrasting lightness
     newH = 0;
     newS = 0.9;
     newL = l > 0.5 ? 0.32 : 0.68;
+    branch = "grayscale";
   } else {
     newH = (h + 0.5) % 1;
     newS = Math.max(0.75, s);
     newL = l > 0.5 ? 0.32 : 0.68;
     if (Math.abs(l - 0.5) < 0.1) newL = 0.28;
+    branch = "complementary";
   }
   let result = rgbToHex(hslToRgb(newH, newS, newL));
+  let distanceFallback = false;
   // Safety: if for some reason result is too close to avg, push lightness further
   if (rgbDistance(avg, hexToRgb(result)) < 150) {
     newL = newL > 0.5 ? 0.85 : 0.15;
     result = rgbToHex(hslToRgb(newH, newS, newL));
+    distanceFallback = true;
   }
-  return result;
+  return {
+    color: result,
+    debug: {
+      branch,
+      distanceFallback,
+      avgHsl: { h, s, l },
+      pickedHsl: { h: newH, s: newS, l: newL },
+    },
+  };
 }
 
 let autoColorTimer = null;
@@ -212,7 +224,19 @@ function updateAutoSafeZoneColor() {
     if (!state.settings.safeZoneAuto || !state.image) return;
     const avg = computeAverageColor();
     if (!avg) return;
-    const newColor = pickAutoColor(avg);
+    const { color: newColor, debug } = pickAutoColor(avg);
+    if (DEBUG) {
+      const avgHex = rgbToHex({
+        r: Math.round(avg.r),
+        g: Math.round(avg.g),
+        b: Math.round(avg.b),
+      });
+      const unchanged = newColor === state.settings.safeZoneColor;
+      console.log(
+        `[auto-color] safe zone color: ${avgHex} → overlay color: ${newColor}`,
+        { ...debug, unchanged }
+      );
+    }
     if (newColor === state.settings.safeZoneColor) return;
     state.settings.safeZoneColor = newColor;
     persistSettings();
