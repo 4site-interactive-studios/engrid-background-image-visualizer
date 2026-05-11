@@ -8,7 +8,7 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 - Overlays a **safe zone** — the vertical column the form sits over — sized to a campaign preset or a custom width.
 - Marks a **focal section indicator** (dashed circle) showing where the focal point lands inside the safe zone.
 - Draws **warm zone bands** (five 30 px steps) on either side of the safe zone, previewing how the image holds up as the form's edge moves at different viewport widths.
-- Auto-picks a high-contrast outline color for the safe zone, or lets you cycle through six fixed colors manually.
+- Auto-picks the highest-contrast color from a fixed 6-color palette (red, orange, yellow, green, blue, indigo), or lets you cycle through them manually.
 - Re-crops to the chosen focal point (Left/Center/Right × Top/Center/Bottom) with arrow-key nudging.
 - Exports as JPEG with selectable max resolution and quality, encoded off the main thread in a Web Worker.
 - Side-by-side **Compare** view of source vs. output.
@@ -17,6 +17,7 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 
 | Preset | Form position | Form width | Safe zone |
 |---|---|---|---|
+| AIUSA - Left † | Left | 550 | 350 |
 | NGS - Left | Left | 550 | 350 |
 | NWF - Left | Left | 800 | 200 |
 | Oceana - Left | Left | 680 | 350 |
@@ -25,7 +26,20 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 | WWF - Center | Center | 1200 | 1200 |
 | Custom | any | any | any |
 
+† AIUSA dimensions are placeholders — confirm and update the entry in `PRESETS` in `js/app.js` once known.
+
 Custom mode unlocks the form-width and safe-zone inputs.
+
+### Smart preset selection
+
+When an image URL is pasted (or passed via `?src=`), the URL is matched against a list of known client CDN prefixes (`CLIENT_URL_PATTERNS` in `js/app.js`). On match, the client's preset is auto-selected and the dropdown is filtered to show only that client's preset + Custom. Currently mapped:
+
+| URL prefix | Preset |
+|---|---|
+| `https://c27fdabe952dfc357fe25ebf5c8897ee.ssl.cf5.rackcdn.com/1839/` | AIUSA - Left |
+| `https://acb0a5d73b67fccd4bbe-c2d8138f0ea10a18dd4c43ec3aa4240a.ssl.cf5.rackcdn.com/10033/` | NWF - Left |
+
+For first-time users (nothing persisted in localStorage), uploading an image with no client URL match defaults to **Custom** rather than the displayed default. Once a user picks any preset, that choice sticks for future sessions.
 
 ## Running locally
 
@@ -43,22 +57,41 @@ Opening `index.html` directly via `file://` will fail — the app uses ES module
 
 When the safe-zone color is set to **Auto**, the app re-picks the outline color whenever the image, crop, focal point, or safe-zone width changes:
 
-1. Sample the area covered by the safe zone (only — no warm-margin padding).
-2. Downscale to 8×8 and average the RGB.
-3. Convert to HSL:
-   - If the sample is near grayscale (`s < 0.15`), pick a vivid red at an opposite lightness.
-   - Otherwise rotate the hue 180° (complementary), force saturation ≥ 0.75, and flip lightness.
-4. If the picked color still isn't far enough from the sample (RGB distance < 150), push lightness to an extreme.
-5. Debounced 150 ms so rapid changes coalesce.
+1. Sample the area covered by the safe zone, downscale to 8×8, average the RGB.
+2. Score each of the 6 palette colors against the avg:
+   - Primary: Euclidean RGB distance (largest wins).
+   - Tie-breaker: perceptual luma difference using ITU-R BT.601 weights (`0.299·R + 0.587·G + 0.114·B`). This separates Red/Green/Blue when they tie on raw distance (e.g. against pure white, where Blue wins on luma).
+3. Pick the top-ranked palette color.
+4. Debounced 150 ms so rapid changes coalesce.
 
-To watch this in action: append `?debug=true` to the URL. Each recompute logs a line like:
+Sample picks: white → Blue, black → Yellow, grey → Blue, red → Green, blue → Yellow.
+
+### `?debug=true`
+
+Append `?debug=true` to the URL to log each auto-color recompute:
 
 ```
-[auto-color] safe zone color: #D47125 → overlay color: #124E7D
-  { branch: "complementary", distanceFallback: false, avgHsl: {...}, pickedHsl: {...}, unchanged: false }
+[auto-color] safe zone color: #FFFFFF → overlay color: #0000FF
+  { pickedName: "Blue",
+    candidates: [
+      { color: "#0000FF", name: "Blue",   distance: 441, lumaDiff: 226 },
+      { color: "#FF0000", name: "Red",    distance: 360, lumaDiff: 179 },
+      ...
+    ],
+    unchanged: false }
 ```
 
-`unchanged: true` means the picker ran but produced the same color it already had.
+The first hex is the sampled image avg, the second is the chosen palette color. `unchanged: true` means the picker ran but produced the same color it already had. The `candidates` array shows the full ranking.
+
+### `?src=<URL>`
+
+Append `?src=https://...` to auto-load an image URL on page open. Subject to CORS for cross-origin images (same as paste-URL).
+
+### CMD/Ctrl+click on the upload icon
+
+Opens a "Pick a test image" modal with 10 synthetic test patterns (solid Black/White/Grey/R/G/B, B/W stripes vertical & horizontal, rainbow stripes vertical & horizontal) generated on the fly as 4000×3000 JPEGs. Useful for sanity-checking the safe-zone overlay and the auto-color picker against known inputs.
+
+Holding CMD/Ctrl when clicking the upload icon **also enables debug mode** for the rest of the session, even if `?debug=true` isn't in the URL.
 
 ## File layout
 
@@ -72,7 +105,7 @@ js/
   compress.js           # download trigger, filename suggestion
   encode-client.js      # main-thread side of JPEG encoding
   encode-worker.js      # Web Worker — actual JPEG encode
-  storage.js            # localStorage persistence (settings + last image)
+  storage.js            # localStorage persistence (settings + per-image state)
 assets/                 # logo, favicons, overview video
 .claude/launch.json     # dev-server config
 ```
@@ -81,7 +114,12 @@ Each module import in `app.js` carries a `?v=N` cache buster; bump the relevant 
 
 ## Persistence
 
-Settings (preset, form width, safe zone, focal point, color mode) and the last loaded image are stored in `localStorage`, so refreshing the page restores the session. Use **Clear image** to drop the cached image.
+Two things are stored in `localStorage` under `engrid-bg-viz`:
+
+- **Settings** — preset, form width, safe zone, color mode, etc. Restored on every page load.
+- **Per-image state** — crop frame, focal point, output dimensions, quality, keyed by a hash of the image bytes. So re-loading the same image restores your prior crop/focal choices. Capped at 50 images (LRU-pruned).
+
+The image bytes themselves are **not** persisted — refreshing the page drops the loaded image and shows the empty state. Use **Clear image** to drop the current image without reloading.
 
 ## Keyboard
 
