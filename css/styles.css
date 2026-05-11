@@ -1034,6 +1034,44 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   margin: 0;
   padding: 6px 14px;
 }
+.test-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.test-image-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 10px;
+}
+.test-image-thumb {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex: 0 0 32px;
+}
+.thumb-black { background: #000; }
+.thumb-white { background: #fff; }
+.thumb-grey { background: #808080; }
+.thumb-red { background: #ff0000; }
+.thumb-green { background: #00ff00; }
+.thumb-blue { background: #0000ff; }
+.thumb-bw-horizontal {
+  background: repeating-linear-gradient(180deg, #000 0 5px, #fff 5px 10px);
+}
+.thumb-bw-vertical {
+  background: repeating-linear-gradient(90deg, #000 0 5px, #fff 5px 10px);
+}
+.thumb-rainbow-horizontal {
+  background: linear-gradient(180deg, #ff5577, #ffaa55, #ffee55, #88ff77, #55aaff, #aa77ff);
+}
+.thumb-rainbow-vertical {
+  background: linear-gradient(90deg, #ff5577, #ffaa55, #ffee55, #88ff77, #55aaff, #aa77ff);
+}
 .crop-size-readout {
   color: var(--muted);
   font-size: 12px;

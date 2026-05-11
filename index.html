@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=39" />
+  <link rel="stylesheet" href="css/styles.css?v=40" />
 </head>
 <body>
   <main class="layout">
@@ -19,6 +19,7 @@
         <label>
           <span>Preset</span>
           <select id="preset">
+            <option value="aiusa-left">AIUSA - Left</option>
             <option value="ngs-left">NGS - Left</option>
             <option value="nwf-left">NWF - Left</option>
             <option value="oceana-left">Oceana - Left</option>
@@ -189,6 +190,28 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=115"></script>
+  <div id="test-image-modal" class="modal" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-test-image></div>
+    <div class="modal-dialog modal-dialog-narrow" role="dialog" aria-label="Pick a test image" aria-modal="true">
+      <header class="modal-header">
+        <h2>Pick a test image</h2>
+        <button type="button" class="icon-btn" data-close-test-image aria-label="Close">×</button>
+      </header>
+      <div class="test-image-grid">
+        <button type="button" class="test-image-option" data-test-kind="black"><span class="test-image-thumb thumb-black"></span><span>Black</span></button>
+        <button type="button" class="test-image-option" data-test-kind="white"><span class="test-image-thumb thumb-white"></span><span>White</span></button>
+        <button type="button" class="test-image-option" data-test-kind="grey"><span class="test-image-thumb thumb-grey"></span><span>Grey</span></button>
+        <button type="button" class="test-image-option" data-test-kind="red"><span class="test-image-thumb thumb-red"></span><span>Red</span></button>
+        <button type="button" class="test-image-option" data-test-kind="green"><span class="test-image-thumb thumb-green"></span><span>Green</span></button>
+        <button type="button" class="test-image-option" data-test-kind="blue"><span class="test-image-thumb thumb-blue"></span><span>Blue</span></button>
+        <button type="button" class="test-image-option" data-test-kind="bw-vertical"><span class="test-image-thumb thumb-bw-vertical"></span><span>B/W vertical stripes</span></button>
+        <button type="button" class="test-image-option" data-test-kind="bw-horizontal"><span class="test-image-thumb thumb-bw-horizontal"></span><span>B/W horizontal stripes</span></button>
+        <button type="button" class="test-image-option" data-test-kind="rainbow-vertical"><span class="test-image-thumb thumb-rainbow-vertical"></span><span>Rainbow vertical stripes</span></button>
+        <button type="button" class="test-image-option" data-test-kind="rainbow-horizontal"><span class="test-image-thumb thumb-rainbow-horizontal"></span><span>Rainbow horizontal stripes</span></button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js?v=121"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ const DEFAULTS = {
     safeZoneColor: DEFAULT_SAFE_ZONE_COLOR,
     safeZoneAuto: true,
     preset: "ngs-left",
+    presetUserSet: false,
   },
   images: {},
 };
@@ -22,10 +23,15 @@ function read() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return structuredClone(DEFAULTS);
     const parsed = JSON.parse(raw);
-    return {
+    const merged = {
       settings: { ...DEFAULTS.settings, ...(parsed.settings || {}) },
       images: parsed.images || {},
     };
+    // Backfill for users predating presetUserSet: any persisted preset counts as user-set.
+    if (parsed.settings && parsed.settings.preset && parsed.settings.presetUserSet === undefined) {
+      merged.settings.presetUserSet = true;
+    }
+    return merged;
   } catch {
     return structuredClone(DEFAULTS);
   }

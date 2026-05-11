@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=33";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=34";
 import {
   loadFromFile,
   loadFromUrl,
@@ -13,9 +13,10 @@ import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
-const DEBUG = new URLSearchParams(window.location.search).get("debug") === "true";
+let DEBUG = new URLSearchParams(window.location.search).get("debug") === "true";
 
 const PRESETS = [
+  { id: "aiusa-left", name: "AIUSA - Left", layout: "left", formWidth: 550, safeZoneWidth: 350 },
   { id: "ngs-left", name: "NGS - Left", layout: "left", formWidth: 550, safeZoneWidth: 350 },
   { id: "nwf-left", name: "NWF - Left", layout: "left", formWidth: 800, safeZoneWidth: 200 },
   { id: "oceana-left", name: "Oceana - Left", layout: "left", formWidth: 680, safeZoneWidth: 350 },
@@ -23,6 +24,38 @@ const PRESETS = [
   { id: "shatterproof-left", name: "Shatterproof - Left", layout: "left", formWidth: 640, safeZoneWidth: 350 },
   { id: "wwf-center", name: "WWF - Center", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
+
+const CLIENT_URL_PATTERNS = [
+  {
+    pattern: "https://c27fdabe952dfc357fe25ebf5c8897ee.ssl.cf5.rackcdn.com/1839/",
+    presetIds: ["aiusa-left"],
+  },
+  {
+    pattern: "https://acb0a5d73b67fccd4bbe-c2d8138f0ea10a18dd4c43ec3aa4240a.ssl.cf5.rackcdn.com/10033/",
+    presetIds: ["nwf-left"],
+  },
+];
+
+function clientMatchForUrl(url) {
+  if (!url) return null;
+  for (const m of CLIENT_URL_PATTERNS) {
+    if (url.includes(m.pattern)) return m;
+  }
+  return null;
+}
+
+function applyClientPresetFilter(allowedIds) {
+  const allowed = new Set([...allowedIds, "custom"]);
+  for (const opt of els.preset.options) {
+    opt.hidden = !allowed.has(opt.value);
+  }
+}
+
+function clearClientPresetFilter() {
+  for (const opt of els.preset.options) {
+    opt.hidden = false;
+  }
+}
 
 function matchingPresetId() {
   const s = state.settings;
@@ -178,39 +211,32 @@ function rgbToHex({ r, g, b }) {
 }
 
 function pickAutoColor(avg) {
-  const { h, s, l } = rgbToHsl(avg.r, avg.g, avg.b);
-  let newH;
-  let newS;
-  let newL;
-  let branch;
-  if (s < 0.15) {
-    // Near grayscale — pick a vivid hue with contrasting lightness
-    newH = 0;
-    newS = 0.9;
-    newL = l > 0.5 ? 0.32 : 0.68;
-    branch = "grayscale";
-  } else {
-    newH = (h + 0.5) % 1;
-    newS = Math.max(0.75, s);
-    newL = l > 0.5 ? 0.32 : 0.68;
-    if (Math.abs(l - 0.5) < 0.1) newL = 0.28;
-    branch = "complementary";
-  }
-  let result = rgbToHex(hslToRgb(newH, newS, newL));
-  let distanceFallback = false;
-  // Safety: if for some reason result is too close to avg, push lightness further
-  if (rgbDistance(avg, hexToRgb(result)) < 150) {
-    newL = newL > 0.5 ? 0.85 : 0.15;
-    result = rgbToHex(hslToRgb(newH, newS, newL));
-    distanceFallback = true;
-  }
+  const avgLuma = 0.299 * avg.r + 0.587 * avg.g + 0.114 * avg.b;
+  const candidates = SAFE_ZONE_COLORS.map((color) => {
+    const rgb = hexToRgb(color);
+    const luma = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+    return {
+      color,
+      name: SAFE_ZONE_COLOR_NAMES[color],
+      distance: rgbDistance(avg, rgb),
+      lumaDiff: Math.abs(avgLuma - luma),
+    };
+  });
+  candidates.sort((a, b) => {
+    if (Math.abs(a.distance - b.distance) > 0.5) return b.distance - a.distance;
+    return b.lumaDiff - a.lumaDiff;
+  });
+  const picked = candidates[0];
   return {
-    color: result,
+    color: picked.color,
     debug: {
-      branch,
-      distanceFallback,
-      avgHsl: { h, s, l },
-      pickedHsl: { h: newH, s: newS, l: newL },
+      pickedName: picked.name,
+      candidates: candidates.map((c) => ({
+        color: c.color,
+        name: c.name,
+        distance: Math.round(c.distance),
+        lumaDiff: Math.round(c.lumaDiff),
+      })),
     },
   };
 }
@@ -296,6 +322,7 @@ function applySafeZoneColorVar() {
 function applyPreset(id) {
   const p = PRESETS.find((p) => p.id === id);
   state.settings.preset = id;
+  state.settings.presetUserSet = true;
   if (p) {
     state.settings.layout = p.layout;
     state.settings.formWidth = p.formWidth;
@@ -314,6 +341,13 @@ function applyPreset(id) {
 function markPresetCustomIfChanged() {
   const matching = matchingPresetId();
   state.settings.preset = matching || "custom";
+  state.settings.presetUserSet = true;
+}
+
+function applyCustomDefaultIfUnset() {
+  if (!state.settings.presetUserSet) {
+    applyPreset("custom");
+  }
 }
 
 const state = {
@@ -989,6 +1023,8 @@ function handleClearImage() {
 
 async function handleFile(file) {
   clearError();
+  clearClientPresetFilter();
+  applyCustomDefaultIfUnset();
   const gen = ++loadGeneration;
   try {
     const image = await loadFromFile(file);
@@ -1081,6 +1117,45 @@ function wireInfoModal() {
   });
 }
 
+function openTestImageModal() {
+  const modal = document.getElementById("test-image-modal");
+  if (!modal) return;
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function wireTestImageModal() {
+  const modal = document.getElementById("test-image-modal");
+  if (!modal) return;
+  const close = () => {
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+  };
+  modal.addEventListener("click", async (e) => {
+    if (e.target.dataset.closeTestImage !== undefined) {
+      close();
+      return;
+    }
+    const optionBtn = e.target.closest("[data-test-kind]");
+    if (optionBtn && modal.contains(optionBtn)) {
+      const kind = optionBtn.dataset.testKind;
+      close();
+      try {
+        const file = await generateTestImage(kind);
+        handleFile(file);
+      } catch (err) {
+        showError(err.message || String(err));
+      }
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !e.defaultPrevented && !modal.hidden) {
+      e.preventDefault();
+      close();
+    }
+  });
+}
+
 function wireVideoModal() {
   const thumb = document.getElementById("video-thumb");
   const modal = document.getElementById("video-modal");
@@ -1117,29 +1192,72 @@ let loadGeneration = 0;
 function attemptUrlLoad(url) {
   if (!url || url === lastTriedUrl) return;
   lastTriedUrl = url;
+  const match = clientMatchForUrl(url);
+  if (match) {
+    applyClientPresetFilter(match.presetIds);
+    applyPreset(match.presetIds[0]);
+  } else {
+    clearClientPresetFilter();
+    applyCustomDefaultIfUnset();
+  }
   handleUrl(url);
 }
 
-async function generateRainbowTestImage() {
+const TEST_IMAGE_W = 4000;
+const TEST_IMAGE_H = 3000;
+const RAINBOW_COLORS = ["#ff5577", "#ffaa55", "#ffee55", "#88ff77", "#55aaff", "#aa77ff"];
+const TEST_IMAGE_SOLID_FILLS = {
+  black: "#000000",
+  white: "#ffffff",
+  grey: "#808080",
+  red: "#ff0000",
+  green: "#00ff00",
+  blue: "#0000ff",
+};
+
+function paintStripes(ctx, axis, colors) {
+  if (axis === "horizontal") {
+    const h = TEST_IMAGE_H / colors.length;
+    for (let i = 0; i < colors.length; i++) {
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(0, i * h, TEST_IMAGE_W, h);
+    }
+  } else {
+    const w = TEST_IMAGE_W / colors.length;
+    for (let i = 0; i < colors.length; i++) {
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(i * w, 0, w, TEST_IMAGE_H);
+    }
+  }
+}
+
+async function generateTestImage(kind) {
   const c = document.createElement("canvas");
-  c.width = 4000;
-  c.height = 3000;
+  c.width = TEST_IMAGE_W;
+  c.height = TEST_IMAGE_H;
   const ctx = c.getContext("2d");
-  const colors = ["#ff5577", "#ffaa55", "#ffee55", "#88ff77", "#55aaff", "#aa77ff"];
-  for (let i = 0; i < colors.length; i++) {
-    ctx.fillStyle = colors[i];
-    ctx.fillRect(0, i * 500, 4000, 500);
+  const solid = TEST_IMAGE_SOLID_FILLS[kind];
+  if (solid) {
+    ctx.fillStyle = solid;
+    ctx.fillRect(0, 0, TEST_IMAGE_W, TEST_IMAGE_H);
+  } else if (kind === "bw-horizontal" || kind === "bw-vertical") {
+    const bw = ["#000000", "#ffffff", "#000000", "#ffffff", "#000000", "#ffffff"];
+    paintStripes(ctx, kind === "bw-horizontal" ? "horizontal" : "vertical", bw);
+  } else if (kind === "rainbow-horizontal" || kind === "rainbow-vertical") {
+    paintStripes(ctx, kind === "rainbow-horizontal" ? "horizontal" : "vertical", RAINBOW_COLORS);
+  } else {
+    throw new Error(`Unknown test image kind: ${kind}`);
   }
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
-  return new File([blob], "rainbow-test.jpg", { type: "image/jpeg" });
+  return new File([blob], `test-${kind}.jpg`, { type: "image/jpeg" });
 }
 
 function wireImageInput() {
-  els.uploadBtn.addEventListener("click", async (e) => {
+  els.uploadBtn.addEventListener("click", (e) => {
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
-      const file = await generateRainbowTestImage();
-      handleFile(file);
+      DEBUG = true;
+      openTestImageModal();
       return;
     }
     els.fileInput.click();
@@ -2026,6 +2144,7 @@ function init() {
   wireCropModal();
   wireInfoModal();
   wireVideoModal();
+  wireTestImageModal();
   wireUndoRedo();
 
   let resizeRaf = 0;
@@ -2039,6 +2158,9 @@ function init() {
   ro.observe(els.canvas.parentElement);
 
   rerender();
+
+  const srcParam = new URLSearchParams(window.location.search).get("src");
+  if (srcParam) attemptUrlLoad(srcParam);
 }
 
 init();
