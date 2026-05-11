@@ -7,7 +7,7 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js?v=32";
-import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=40";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=44";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeJpegInWorker } from "./encode-client.js?v=1";
 
@@ -776,10 +776,21 @@ function rerender() {
     ? { x: 0, y: 0, w: state.outputW, h: state.outputH }
     : state.crop;
 
+  const baseSettings = effectiveSafeZoneSettings();
+  let renderSettings = baseSettings;
+  if (!useCompressed && state.crop && state.outputW > 0 && state.crop.w !== state.outputW) {
+    const scale = state.crop.w / state.outputW;
+    renderSettings = {
+      ...baseSettings,
+      safeZoneWidth: baseSettings.safeZoneWidth * scale,
+      warmZoneBandWidthPx: (baseSettings.warmZoneBandWidthPx ?? 30) * scale,
+    };
+  }
+
   render({
     canvas: els.canvas,
     image: renderImage,
-    settings: effectiveSafeZoneSettings(),
+    settings: renderSettings,
     focal: effectiveFocal(),
     crop: renderCrop,
     showSafeZone: !state.compareMode && !state.compareHoverOverlay,
@@ -1224,15 +1235,18 @@ function wireFocalAndCrop() {
     state.maxResolution = MAX_RES_PRESETS[idx].value;
     updateMaxResolutionDisplay();
     if (!state.image) return;
-    if (clampOutputToCap()) {
-      syncOutputAndQualityToInputs();
-      debouncedSliderEffects(() => {
-        if (!state.hasManualCrop) recomputeCropFromFocal();
-        rerender();
+    const changed = clampOutputToCap();
+    if (changed) syncOutputAndQualityToInputs();
+    debouncedSliderEffects(() => {
+      if (changed && !state.hasManualCrop) recomputeCropFromFocal();
+      rerender();
+      if (modalState.active) renderModal();
+      updateAutoSafeZoneColor();
+      if (changed) {
         persistImageState();
         scheduleEstimate();
-      });
-    }
+      }
+    });
   });
 
   els.resetCrop.addEventListener("click", () => {
@@ -1613,13 +1627,15 @@ function fixCropToMeetMin() {
       if (Math.min(presetCap, intrinsicMax) >= requiredCap) {
         state.maxResolution = preset.value;
         updateMaxResolutionDisplay();
-        if (clampOutputToCap()) {
+        const clamped = clampOutputToCap();
+        if (clamped) {
           syncOutputAndQualityToInputs();
           if (!state.hasManualCrop) recomputeCropFromFocal();
-          rerender();
           persistImageState();
           scheduleEstimate();
         }
+        rerender();
+        if (modalState.active) renderModal();
         return;
       }
     }
@@ -1660,9 +1676,14 @@ function fixCropToMeetMin() {
 function drawModalCropSafeZone(ctx, rect, scale) {
   const safeZoneSettings = effectiveCropSafeZoneSettings();
   const isCenter = isCenterFormPosition();
-  const mainCanvasW = els.canvas.width;
-  const safeZoneWidth = mainCanvasW > 0
-    ? safeZoneSettings.safeZoneWidth * (rect.w / mainCanvasW)
+  const refCrop = modalState.crop || state.crop;
+  const cap = state.maxResolution > 0 ? state.maxResolution : Infinity;
+  const refMax = refCrop ? Math.max(refCrop.w, refCrop.h) : 0;
+  const outputW = refCrop
+    ? (refMax <= cap ? refCrop.w : refCrop.w * cap / refMax)
+    : 0;
+  const safeZoneWidth = outputW > 0
+    ? safeZoneSettings.safeZoneWidth * rect.w / outputW
     : 0;
   const warmZoneBandWidth = safeZoneWidth * (30 / 350);
 
@@ -1694,7 +1715,8 @@ function drawModalCropSafeZone(ctx, rect, scale) {
       modalState.focal || effectiveFocal(),
       safeZoneSettings.safeZoneColor || "#00FF00",
       safeZoneSettings.safeZoneFillAlpha != null ? safeZoneSettings.safeZoneFillAlpha : 0.3,
-      safeZonePosition(rect.w, safeZoneWidth, focalX)
+      safeZonePosition(rect.w, safeZoneWidth, focalX),
+      safeZoneWidth
     );
   }
   ctx.restore();

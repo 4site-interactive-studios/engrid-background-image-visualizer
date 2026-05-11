@@ -63,13 +63,16 @@ export function render({ canvas, image, settings, focal, crop, showSafeZone = tr
 
   if (showSafeZone) {
     const focalX = focal ? focal.x : 0.5;
+    const outputScale = srcW > 0 ? canvas.width / srcW : 1;
+    const effectiveSafeZoneWidth = settings.safeZoneWidth * outputScale;
+    const effectiveWarmBand = (settings.warmZoneBandWidthPx ?? WARM_ZONE_BAND_WIDTH) * outputScale;
     drawActiveSafeZone(
       ctx,
       canvas,
-      settings.safeZoneWidth,
+      effectiveSafeZoneWidth,
       focalX,
       settings.safeZoneColor || "#00FF00",
-      undefined,
+      effectiveWarmBand,
       settings.safeZoneFillAlpha,
       settings.safeZoneWarmColor
     );
@@ -79,7 +82,8 @@ export function render({ canvas, image, settings, focal, crop, showSafeZone = tr
       focal,
       settings.safeZoneColor || "#00FF00",
       settings.safeZoneFillAlpha != null ? settings.safeZoneFillAlpha : SAFE_ZONE_FILL_ALPHA,
-      safeZonePosition(canvas.width, settings.safeZoneWidth, focalX)
+      safeZonePosition(canvas.width, effectiveSafeZoneWidth, focalX),
+      effectiveSafeZoneWidth
     );
   }
 }
@@ -94,7 +98,7 @@ export function safeZonePosition(canvasWidth, columnWidthPx, focalX) {
   return { x, w: colW };
 }
 
-export function drawFocalSectionCircle(ctx, canvas, focal, color, fillAlpha, safeZoneRect) {
+export function drawFocalSectionCircle(ctx, canvas, focal, color, fillAlpha, safeZoneRect, radiusReferenceWidth) {
   if (!focal || !safeZoneRect) return;
 
   const sectionCenter = (coord, total) => {
@@ -104,14 +108,10 @@ export function drawFocalSectionCircle(ctx, canvas, focal, color, fillAlpha, saf
   };
 
   const cx = safeZoneRect.x + safeZoneRect.w / 2;
-  const horizontalClearance = safeZoneRect.w / 8;
-  const targetRadius = (safeZoneRect.w * 3) / 8;
-  const radius = Math.max(0, Math.min(targetRadius, (canvas.height - 2 * horizontalClearance) / 2));
+  const refW = radiusReferenceWidth != null ? radiusReferenceWidth : safeZoneRect.w;
+  const radius = (refW * 3) / 8;
   if (radius <= 0) return;
-  const sectionCy = sectionCenter(focal.y, canvas.height);
-  const minCy = radius + horizontalClearance;
-  const maxCy = canvas.height - radius - horizontalClearance;
-  const cy = maxCy >= minCy ? Math.max(minCy, Math.min(sectionCy, maxCy)) : canvas.height / 2;
+  const cy = sectionCenter(focal.y, canvas.height);
 
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
