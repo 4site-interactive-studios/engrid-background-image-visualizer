@@ -115,7 +115,7 @@ function rgbDistance(a, b) {
   return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
-function computeAverageColor() {
+function computeAverageColor(focalXOverride) {
   if (!state.image) return null;
 
   const cropX = state.crop ? state.crop.x : 0;
@@ -129,7 +129,7 @@ function computeAverageColor() {
   const settings = effectiveSafeZoneSettings();
   const safeZoneSource = settings.safeZoneWidth * sourcePerOutput;
 
-  const focalX = effectiveFocal().x;
+  const focalX = focalXOverride != null ? focalXOverride : effectiveFocal().x;
   let safeXInCrop;
   if (focalX <= 0.25) safeXInCrop = 0;
   else if (focalX >= 0.75) safeXInCrop = cropW - safeZoneSource;
@@ -241,35 +241,68 @@ function pickAutoColor(avg) {
   };
 }
 
-let autoColorTimer = null;
+function autoColorCacheSignature() {
+  if (!state.image) return null;
+  const c = state.crop
+    ? `${state.crop.x},${state.crop.y},${state.crop.w},${state.crop.h}`
+    : "none";
+  const safeZoneWidth = effectiveSafeZoneSettings().safeZoneWidth;
+  return `${state.image.hash || state.image.filename}|${c}|${state.outputW}|${safeZoneWidth}`;
+}
+
+function getAutoColorForFocalX(focalX) {
+  const sig = autoColorCacheSignature();
+  if (!sig) return null;
+  if (!state.autoColorCache || state.autoColorCache.signature !== sig) {
+    state.autoColorCache = { signature: sig, values: Object.create(null) };
+  }
+  const key = String(focalX);
+  if (state.autoColorCache.values[key]) return state.autoColorCache.values[key];
+  const avg = computeAverageColor(focalX);
+  if (!avg) return null;
+  const { color, debug } = pickAutoColor(avg);
+  state.autoColorCache.values[key] = color;
+  if (DEBUG) {
+    const avgHex = rgbToHex({
+      r: Math.round(avg.r),
+      g: Math.round(avg.g),
+      b: Math.round(avg.b),
+    });
+    console.log(
+      `[auto-color] focal=${focalX} avg=${avgHex} → overlay=${color}`,
+      debug
+    );
+  }
+  return color;
+}
+
+function schedulePrecomputeOtherAutoColors(currentFocalX) {
+  const others = [0, 0.5, 1].filter((x) => x !== currentFocalX);
+  if (others.length === 0) return;
+  const run = () => {
+    if (!state.settings.safeZoneAuto || !state.image) return;
+    for (const x of others) getAutoColorForFocalX(x);
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 500 });
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function updateAutoSafeZoneColor() {
   if (!state.settings.safeZoneAuto || !state.image) return;
-  if (autoColorTimer) clearTimeout(autoColorTimer);
-  autoColorTimer = setTimeout(() => {
-    autoColorTimer = null;
-    if (!state.settings.safeZoneAuto || !state.image) return;
-    const avg = computeAverageColor();
-    if (!avg) return;
-    const { color: newColor, debug } = pickAutoColor(avg);
-    if (DEBUG) {
-      const avgHex = rgbToHex({
-        r: Math.round(avg.r),
-        g: Math.round(avg.g),
-        b: Math.round(avg.b),
-      });
-      const unchanged = newColor === state.settings.safeZoneColor;
-      console.log(
-        `[auto-color] safe zone color: ${avgHex} → overlay color: ${newColor}`,
-        { ...debug, unchanged }
-      );
-    }
-    if (newColor === state.settings.safeZoneColor) return;
+  const focalX = effectiveFocal().x;
+  const newColor = getAutoColorForFocalX(focalX);
+  if (!newColor) return;
+  if (newColor !== state.settings.safeZoneColor) {
     state.settings.safeZoneColor = newColor;
     persistSettings();
     applySafeZoneColorVar();
     rerender();
     renderModal();
-  }, 150);
+  }
+  schedulePrecomputeOtherAutoColors(focalX);
 }
 
 const MANUAL_CYCLE_ORDER = [3, 4, 5, 0, 1, 2];
@@ -368,6 +401,7 @@ const state = {
   maxResolution: 2500,
   usingSource: false,
   encodedBytes: null,
+  autoColorCache: null,
 };
 
 const els = {
@@ -400,7 +434,7 @@ const els = {
   previewSpinner: $("preview-spinner"),
   emptyState: $("empty-state"),
   sourceInfo: $("source-info"),
-  focalPreset: $("focal-preset"),
+  focalGrid: $("focal-grid"),
   cropFocalPreset: $("crop-focal-preset"),
   focalAttributeHint: $("focal-attribute-hint"),
   outputWLabel: $("output-w-label"),
@@ -909,9 +943,16 @@ function snapFocalToPreset(focal) {
 }
 
 function highlightFocalPreset() {
-  const value = `${state.focal.x},${state.focal.y}`;
-  els.focalPreset.value = value;
-  if (els.cropFocalPreset) els.cropFocalPreset.value = value;
+  const fx = String(state.focal.x);
+  const fy = String(state.focal.y);
+  if (els.focalGrid) {
+    for (const cell of els.focalGrid.querySelectorAll(".focal-cell")) {
+      const active = cell.dataset.fx === fx && cell.dataset.fy === fy;
+      cell.classList.toggle("is-active", active);
+      cell.setAttribute("aria-checked", active ? "true" : "false");
+    }
+  }
+  if (els.cropFocalPreset) els.cropFocalPreset.value = `${state.focal.x},${state.focal.y}`;
 }
 
 function setFocalFromPreset(value) {
@@ -1330,15 +1371,17 @@ function wireFocalAndCrop() {
     } catch (e) {}
   });
 
-  els.focalPreset.addEventListener("change", () => {
-    if (!state.image) return;
-    setFocalFromPreset(els.focalPreset.value);
-    if (!state.hasManualCrop) recomputeCropFromFocal();
+  els.focalGrid.addEventListener("click", (e) => {
+    const cell = e.target.closest(".focal-cell");
+    if (!cell || !state.image) return;
+    const cropChanges = !state.hasManualCrop;
+    setFocalFromPreset(`${cell.dataset.fx},${cell.dataset.fy}`);
+    if (cropChanges) recomputeCropFromFocal();
     updateAutoSafeZoneColor();
     rerender();
     if (modalState.active) renderModal();
     persistImageState();
-    scheduleEstimate();
+    if (cropChanges) scheduleEstimate();
     updateFocalAttributeHint();
   });
 
@@ -1891,6 +1934,22 @@ function modalHandlePositions(x, y, w, h) {
   ];
 }
 
+const HANDLE_CURSORS = {
+  nw: "nw-resize",
+  n: "n-resize",
+  ne: "ne-resize",
+  e: "e-resize",
+  se: "se-resize",
+  s: "s-resize",
+  sw: "sw-resize",
+  w: "w-resize",
+  move: "grab",
+};
+
+function cursorForHandle(handle) {
+  return HANDLE_CURSORS[handle] || "";
+}
+
 function modalHitTest(px, py) {
   const c = modalState.crop;
   if (!c) return null;
@@ -2038,14 +2097,14 @@ function wireCropModal() {
       rect,
     };
     modalState.removeCrop = false;
-    if (handle === "move") els.modalCanvas.style.cursor = "grabbing";
+    els.modalCanvas.style.cursor = handle === "move" ? "grabbing" : cursorForHandle(handle);
   });
 
   els.modalCanvas.addEventListener("mousemove", (e) => {
     if (modalState.drag || !modalState.active || !state.image) return;
     const { px, py } = modalCanvasCoords(e);
     const handle = modalHitTest(px, py);
-    els.modalCanvas.style.cursor = handle === "move" ? "grab" : "";
+    els.modalCanvas.style.cursor = cursorForHandle(handle);
   });
 
   els.modalCanvas.addEventListener("mouseleave", () => {

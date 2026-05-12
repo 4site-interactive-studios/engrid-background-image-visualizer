@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=40" />
+  <link rel="stylesheet" href="css/styles.css?v=43" />
 </head>
 <body>
   <main class="layout">
@@ -47,17 +47,17 @@
         </label>
         <label class="focal-point-setting">
           <span>Image focal point<span class="safe-zone-controls"><button type="button" class="safe-zone-color-trigger" id="safe-zone-color" aria-label="Cycle safe zone color"></button></span></span>
-          <select id="focal-preset">
-            <option value="0,0">Left Top</option>
-            <option value="0,0.5">Left Center</option>
-            <option value="0,1">Left Bottom</option>
-            <option value="0.5,0">Center Top</option>
-            <option value="0.5,0.5" selected>Center</option>
-            <option value="0.5,1">Center Bottom</option>
-            <option value="1,0">Right Top</option>
-            <option value="1,0.5">Right Center</option>
-            <option value="1,1">Right Bottom</option>
-          </select>
+          <div class="focal-grid" id="focal-grid" role="radiogroup" aria-label="Image focal point">
+            <button type="button" class="focal-cell" data-fx="0" data-fy="0" aria-label="Left Top" title="Left Top"></button>
+            <button type="button" class="focal-cell" data-fx="0.5" data-fy="0" aria-label="Center Top" title="Center Top"></button>
+            <button type="button" class="focal-cell" data-fx="1" data-fy="0" aria-label="Right Top" title="Right Top"></button>
+            <button type="button" class="focal-cell" data-fx="0" data-fy="0.5" aria-label="Left Center" title="Left Center"></button>
+            <button type="button" class="focal-cell" data-fx="0.5" data-fy="0.5" aria-label="Center" title="Center"></button>
+            <button type="button" class="focal-cell" data-fx="1" data-fy="0.5" aria-label="Right Center" title="Right Center"></button>
+            <button type="button" class="focal-cell" data-fx="0" data-fy="1" aria-label="Left Bottom" title="Left Bottom"></button>
+            <button type="button" class="focal-cell" data-fx="0.5" data-fy="1" aria-label="Center Bottom" title="Center Bottom"></button>
+            <button type="button" class="focal-cell" data-fx="1" data-fy="1" aria-label="Right Bottom" title="Right Bottom"></button>
+          </div>
         </label>
         <div id="crop-inline" class="crop-inline" hidden aria-hidden="true">
           <div class="crop-inline-canvas-wrap">
@@ -212,6 +212,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=121"></script>
+  <script type="module" src="js/app.js?v=125"></script>
 </body>
 </html>
