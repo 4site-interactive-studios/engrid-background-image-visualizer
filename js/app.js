@@ -1749,8 +1749,13 @@ function renderModal() {
     ctx.strokeRect(cx + 1, cy + 1, cw - 2, ch - 2);
     const handles = modalHandlePositions(cx, cy, cw, ch);
     ctx.fillStyle = "rgba(47, 129, 247, 0.95)";
+    const size = 10;
+    const maxX = canvas.width - size;
+    const maxY = canvas.height - size;
     for (const h of handles) {
-      ctx.fillRect(h.cx - 5, h.cy - 5, 10, 10);
+      const dx = Math.min(Math.max(h.cx - size / 2, 0), maxX);
+      const dy = Math.min(Math.max(h.cy - size / 2, 0), maxY);
+      ctx.fillRect(dx, dy, size, size);
     }
     ctx.restore();
   }
